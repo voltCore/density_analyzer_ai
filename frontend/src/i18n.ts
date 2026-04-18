@@ -32,6 +32,10 @@ const resources = {
         language: "Language",
         helpOpenLabel: "Open help",
       },
+      sourceMode: {
+        mock: "mock",
+        aaronia: "Aaronia",
+      },
       language: {
         english: "English",
         ukrainian: "Ukrainian",
@@ -139,6 +143,7 @@ const resources = {
       },
       device: {
         title: "Aaronia settings",
+        status: "Status",
         waitingBackend: "waiting for backend",
         currentStreamHeader: "Current stream header",
         remoteConfig: "Remote config",
@@ -160,6 +165,32 @@ const resources = {
         input: "Input",
         payload: "Payload",
         control: "Control",
+      },
+      deviceLabels: {
+        center_frequency: "Center frequency",
+        center_frequency_hz: "Center frequency",
+        span: "Span",
+        reference_level: "Reference level",
+        reference_level_dbm: "Reference level",
+        ft_size: "FFT size",
+        fft_size: "FFT size",
+        fft_size_mode: "FFT size mode",
+        fft_window: "FFT window",
+        receiver_clock: "Receiver clock",
+        frequency_range: "Frequency range",
+      },
+      deviceValues: {
+        warning: "warning",
+        error: "error",
+        ok: "ok",
+        main: "main",
+        iq: "IQ",
+        volt: "volt",
+        full: "Full",
+        fft: "FFT",
+        hamming: "Hamming",
+        mock: "mock",
+        aaronia: "Aaronia",
       },
       capture: {
         title: "Settings for this calculation",
@@ -453,6 +484,10 @@ const resources = {
         language: "Мова",
         helpOpenLabel: "Відкрити довідку",
       },
+      sourceMode: {
+        mock: "імітація",
+        aaronia: "Aaronia",
+      },
       language: {
         english: "Англійська",
         ukrainian: "Українська",
@@ -460,87 +495,87 @@ const resources = {
       form: {
         frequencyFrom: "Частота з, Hz",
         frequencyTo: "Частота по, Hz",
-        bins: "Bins",
+        bins: "Кількість клітинок",
         captureSeconds: "Час IQ, sec",
-        referenceLevel: "Reference level, dBm",
+        referenceLevel: "Рівень опори, dBm",
         optional: "опційно",
         occupancyThreshold: "Поріг зайнятості, dB",
-        window: "Window",
+        window: "Вікно",
         applyToDevice: "Передавати налаштування на Aaronia",
-        includeBins: "Повернути числові дані по bins",
+        includeBins: "Повернути числові дані по клітинках",
         submit: "Розрахувати",
         loading: "Рахую...",
-        invalidRange: "Кінцева частота має бути більшою за початкову, bins >= 16.",
+        invalidRange: "Кінцева частота має бути більшою за початкову, клітинок >= 16.",
       },
       errors: {
-        backendUnavailable: "Backend недоступний",
+        backendUnavailable: "Бекенд недоступний",
         dataFetchFailed: "Не вдалося отримати дані",
         readDbFailed: "Не вдалося прочитати БД.",
-        readSnapshotFailed: "Не вдалося прочитати snapshot.",
-        saveSnapshotFailed: "Не вдалося зберегти snapshot.",
-        deleteSnapshotFailed: "Не вдалося видалити snapshot.",
+        readSnapshotFailed: "Не вдалося прочитати знімок.",
+        saveSnapshotFailed: "Не вдалося зберегти знімок.",
+        deleteSnapshotFailed: "Не вдалося видалити знімок.",
         importFailed: "Не вдалося імпортувати JSON.",
-        aiUnavailable: "AI пояснення недоступне.",
-        invalidExport: "JSON не схожий на Spectrana Density export.",
+        aiUnavailable: "Пояснення ШІ недоступне.",
+        invalidExport: "JSON не схожий на експорт Spectrana Density.",
       },
       notices: {
-        savedSnapshot: "Snapshot збережено в БД для порівняння.",
-        importedSnapshot: "JSON snapshot імпортовано в БД для порівняння.",
+        savedSnapshot: "Знімок збережено в БД для порівняння.",
+        importedSnapshot: "JSON-знімок імпортовано в БД для порівняння.",
       },
       status: {
         deviceConfigured: "Пристрій налаштовано",
         yes: "так",
         no: "ні",
-        packets: "Packets",
+        packets: "Пакети",
         readyTitle: "Готово до розрахунку.",
-        readyText: "Введіть діапазон частот і кількість bins.",
-        density: "Density",
-        power: "power",
-        samples: "samples",
+        readyText: "Введіть діапазон частот і кількість клітинок.",
+        density: "Щільність",
+        power: "потужність",
+        samples: "семпли",
       },
       metrics: {
-        rangeDensity: "Range density",
-        assessment: "Assessment",
-        meanDensity: "Mean density",
-        peakDensity: "Peak density",
-        peakFrequency: "Peak frequency",
-        integratedPower: "Integrated power",
-        binWidth: "Bin width",
+        rangeDensity: "Щільність діапазону",
+        assessment: "Оцінка",
+        meanDensity: "Середня щільність",
+        peakDensity: "Пікова щільність",
+        peakFrequency: "Пікова частота",
+        integratedPower: "Інтегральна потужність",
+        binWidth: "Ширина клітинки",
       },
       exportPanel: {
         title: "Експорт і збереження",
-        snapshotName: "Назва snapshot",
+        snapshotName: "Назва знімка",
         placeholder: "наприклад: antenna A, 745 MHz, before filter",
-        save: "Зберегти snapshot",
-        exportJson: "Export JSON",
-        exportCsv: "Export CSV",
+        save: "Зберегти знімок",
+        exportJson: "Експорт JSON",
+        exportCsv: "Експорт CSV",
         importJson: "Імпорт JSON",
         helper:
-          "JSON зберігає повний результат. CSV містить summary, оцінку діапазону і bins для табличного порівняння.",
+          "JSON зберігає повний результат. CSV містить підсумок, оцінку діапазону і клітинки для табличного порівняння.",
         noBins:
-          "У цьому результаті немає rows по bins. Увімкніть \"Повернути числові дані по bins\" перед наступним розрахунком, якщо потрібен bin-level CSV.",
+          "У цьому результаті немає рядків по клітинках. Увімкніть \"Повернути числові дані по клітинках\" перед наступним розрахунком, якщо потрібен детальний CSV.",
       },
       comparison: {
-        title: "Порівняння snapshot-ів",
-        empty: "Збережіть перший snapshot у БД після розрахунку.",
+        title: "Порівняння знімків",
+        empty: "Збережіть перший знімок у БД після розрахунку.",
         baseline: "База",
         compareWith: "Порівняти з",
-        chooseSnapshot: "оберіть snapshot",
-        selectTwo: "Оберіть два snapshot-и для числового порівняння.",
+        chooseSnapshot: "оберіть знімок",
+        selectTwo: "Оберіть два знімки для числового порівняння.",
         delete: "Видалити",
-        density: "density",
-        bins: "bins",
-        metric: "Metric",
+        density: "щільність",
+        bins: "клітинки",
+        metric: "Метрика",
         base: "База",
         comparison: "Порівняння",
-        delta: "Delta",
-        occupiedBandwidth: "Occupied bandwidth",
+        delta: "Різниця",
+        occupiedBandwidth: "Зайнята смуга",
       },
       ai: {
-        title: "AI пояснення",
-        button: "Пояснити через AI",
-        loading: "AI аналізує...",
-        helper: "Потрібен backend API key та інтернет-з'єднання.",
+        title: "Пояснення ШІ",
+        button: "Пояснити через ШІ",
+        loading: "ШІ аналізує...",
+        helper: "Потрібен ключ API на бекенді та інтернет-з'єднання.",
         conclusion: "Висновок:",
         numericBasis: "Числова база:",
         tie: "сигнали приблизно однакові за щільністю",
@@ -550,51 +585,78 @@ const resources = {
       range: {
         title: "Оцінка щільності діапазону",
         line:
-          "{{percent}}% діапазону вище noise floor на {{threshold}} dB",
-        noiseFloor: "Noise floor",
-        threshold: "Threshold",
-        occupiedBins: "Occupied bins",
-        occupiedBandwidth: "Occupied bandwidth",
-        peakOverFloor: "Peak over floor",
-        meanExcess: "Mean excess",
+          "{{percent}}% діапазону вище рівня шуму на {{threshold}} dB",
+        noiseFloor: "Рівень шуму",
+        threshold: "Поріг",
+        occupiedBins: "Зайняті клітинки",
+        occupiedBandwidth: "Зайнята смуга",
+        peakOverFloor: "Пік над шумом",
+        meanExcess: "Середнє перевищення",
       },
       device: {
         title: "Налаштування Aaronia",
-        waitingBackend: "чекаю backend",
-        currentStreamHeader: "Поточний stream header",
-        remoteConfig: "Remote config",
-        online: "online",
-        offline: "offline",
+        status: "Статус",
+        waitingBackend: "чекаю бекенд",
+        currentStreamHeader: "Поточний заголовок потоку",
+        remoteConfig: "Віддалена конфігурація",
+        online: "онлайн",
+        offline: "офлайн",
         unknown: "невідомо",
         noData: "немає даних",
         notSet: "не задано",
-        mainInput: "main",
-        start: "Start",
-        end: "End",
-        center: "Center",
-        span: "Span",
-        rbwFromFft: "RBW з FFT size",
-        sampleFrequency: "Sample frequency",
-        samplesPerPacket: "Samples/packet",
-        unit: "Unit",
-        mission: "Mission",
-        input: "Input",
-        payload: "Payload",
-        control: "Control",
+        mainInput: "основний",
+        start: "Початок",
+        end: "Кінець",
+        center: "Центр",
+        span: "Смуга",
+        rbwFromFft: "RBW за розміром FFT",
+        sampleFrequency: "Частота семплювання",
+        samplesPerPacket: "Семплів/пакет",
+        unit: "Одиниця",
+        mission: "Місія",
+        input: "Вхід",
+        payload: "Дані",
+        control: "Керування",
+      },
+      deviceLabels: {
+        center_frequency: "Центральна частота",
+        center_frequency_hz: "Центральна частота",
+        span: "Смуга",
+        reference_level: "Рівень опори",
+        reference_level_dbm: "Рівень опори",
+        ft_size: "Розмір FFT",
+        fft_size: "Розмір FFT",
+        fft_size_mode: "Режим розміру FFT",
+        fft_window: "Вікно FFT",
+        receiver_clock: "Тактування приймача",
+        frequency_range: "Частотний діапазон",
+      },
+      deviceValues: {
+        warning: "попередження",
+        error: "помилка",
+        ok: "норма",
+        main: "основний",
+        iq: "IQ",
+        volt: "вольт",
+        full: "повний",
+        fft: "FFT",
+        hamming: "Hamming",
+        mock: "імітація",
+        aaronia: "Aaronia",
       },
       capture: {
         title: "Налаштування цього розрахунку",
-        rbwBin: "RBW / bin",
-        sampleRate: "Sample rate",
-        occupancyThreshold: "Occupancy threshold",
-        reference: "Reference",
+        rbwBin: "RBW / клітинка",
+        sampleRate: "Частота семплювання",
+        occupancyThreshold: "Поріг зайнятості",
+        reference: "Рівень опори",
       },
       table: {
-        frequencyHz: "Frequency, Hz",
-        density: "Density",
-        densityDbHz: "Density, dB/Hz",
-        power: "Power",
-        powerDb: "Power, dB",
+        frequencyHz: "Частота, Hz",
+        density: "Щільність",
+        densityDbHz: "Щільність, dB/Hz",
+        power: "Потужність",
+        powerDb: "Потужність, dB",
       },
       assessment: {
         quiet: "тихий",
@@ -607,8 +669,8 @@ const resources = {
         title: "Що вимірює проєкт",
         close: "Закрити",
         intro: [
-          "Spectrana Density вимірює, як енергія сигналу розподілена всередині обраного частотного діапазону. Backend бере IQ-дані, розбиває діапазон на bins, рахує FFT і спектральну щільність потужності для кожної частотної клітинки.",
-          "Головний практичний результат - Range density: яка частина діапазону має щільність вище локального noise floor на заданий поріг. Без калібрування всього тракту ці числа слід читати як стабільну оцінку для порівняння вимірів, а не як абсолютний dBm/Hz.",
+          "Spectrana Density вимірює, як енергія сигналу розподілена всередині обраного частотного діапазону. Бекенд бере IQ-дані, розбиває діапазон на клітинки, рахує FFT і спектральну щільність потужності для кожної частотної клітинки.",
+          "Головний практичний результат - щільність діапазону: яка частина діапазону має щільність вище локального рівня шуму на заданий поріг. Без калібрування всього тракту ці числа слід читати як стабільну оцінку для порівняння вимірів, а не як абсолютний dBm/Hz.",
         ],
         sections: [
           {
@@ -617,17 +679,17 @@ const resources = {
               {
                 term: "Частота з, Hz",
                 description:
-                  "Початок частотного діапазону. Звідси backend починає збір і розрахунок щільності сигналу.",
+                  "Початок частотного діапазону. Звідси бекенд починає збір і розрахунок щільності сигналу.",
               },
               {
                 term: "Частота по, Hz",
                 description:
-                  "Кінець діапазону. Різниця між кінцевою та початковою частотою утворює span виміру.",
+                  "Кінець діапазону. Різниця між кінцевою та початковою частотою утворює смугу виміру.",
               },
               {
-                term: "Bins",
+                term: "Клітинки",
                 description:
-                  "Кількість клітинок частотної сітки. Кожен bin відповідає маленькій частині діапазону, для якої рахується щільність і потужність.",
+                  "Кількість клітинок частотної сітки. Кожна клітинка відповідає маленькій частині діапазону, для якої рахується щільність і потужність.",
               },
               {
                 term: "Час IQ, sec",
@@ -635,27 +697,27 @@ const resources = {
                   "Скільки секунд збирати IQ-дані. Більший час дає більше семплів і стабільнішу оцінку, але розрахунок триває довше.",
               },
               {
-                term: "Reference level, dBm",
+                term: "Рівень опори, dBm",
                 description:
                   "Опційний рівень опори для приймача Aaronia. Він допомагає приладу вибрати коректний рівень тракту, але не перетворює результат у калібрований dBm/Hz без калібрування всього тракту.",
               },
               {
                 term: "Поріг зайнятості, dB",
                 description:
-                  "На скільки dB щільність у bin має бути вищою за noise floor, щоб цей bin вважався зайнятим сигналом.",
+                  "На скільки dB щільність у клітинці має бути вищою за рівень шуму, щоб ця клітинка вважалася зайнятою сигналом.",
               },
               {
-                term: "Window",
+                term: "Вікно",
                 description:
-                  "Вікно FFT. Hann зменшує витік спектра між сусідніми bins, Rectangular залишає сире вікно без згладжування.",
+                  "Вікно FFT. Hann зменшує витік спектра між сусідніми клітинками, Rectangular залишає сире вікно без згладжування.",
               },
               {
                 term: "Передавати налаштування на Aaronia",
                 description:
-                  "Коли увімкнено, backend перед розрахунком відправляє діапазон, центр, span, bins і reference level на прилад.",
+                  "Коли увімкнено, бекенд перед розрахунком відправляє діапазон, центр, смугу, кількість клітинок і рівень опори на прилад.",
               },
               {
-                term: "Повернути числові дані по bins",
+                term: "Повернути числові дані по клітинках",
                 description:
                   "Коли увімкнено, відповідь містить рядок для кожної клітинки частоти. Це потрібно для таблиці, CSV і детального аналізу.",
               },
@@ -665,39 +727,39 @@ const resources = {
             title: "Головні показники",
             items: [
               {
-                term: "Range density",
+                term: "Щільність діапазону",
                 description:
-                  "Відсоток діапазону, де bins перевищили поріг зайнятості. Це головний індикатор, наскільки діапазон заповнений сигналом.",
+                  "Відсоток діапазону, де клітинки перевищили поріг зайнятості. Це головний індикатор, наскільки діапазон заповнений сигналом.",
               },
               {
-                term: "Assessment",
+                term: "Оцінка",
                 description:
-                  "Словесна оцінка Range density: тихий, рідкий, помірний або щільний. Вона швидко показує стан діапазону без читання всіх чисел.",
+                  "Словесна оцінка щільності діапазону: тихий, рідкий, помірний або щільний. Вона швидко показує стан діапазону без читання всіх чисел.",
               },
               {
-                term: "Mean density",
+                term: "Середня щільність",
                 description:
                   "Середня спектральна щільність потужності по всьому діапазону. Корисна для порівняння загального рівня шуму або сигналу між вимірами.",
               },
               {
-                term: "Peak density",
+                term: "Пікова щільність",
                 description:
-                  "Найвища спектральна щільність серед усіх bins. Показує найсильнішу ділянку в обраному діапазоні.",
+                  "Найвища спектральна щільність серед усіх клітинок. Показує найсильнішу ділянку в обраному діапазоні.",
               },
               {
-                term: "Peak frequency",
+                term: "Пікова частота",
                 description:
-                  "Частота bin, де знайдено Peak density. Допомагає швидко знайти, де саме знаходиться найсильніший сигнал.",
+                  "Частота клітинки, де знайдено пікову щільність. Допомагає швидко знайти, де саме знаходиться найсильніший сигнал.",
               },
               {
-                term: "Integrated power",
+                term: "Інтегральна потужність",
                 description:
-                  "Сумарна потужність по всьому діапазону: density множиться на ширину bin і підсумовується. Це загальна енергія в обраному span.",
+                  "Сумарна потужність по всьому діапазону: щільність множиться на ширину клітинки і підсумовується. Це загальна енергія в обраній смузі.",
               },
               {
-                term: "Bin width",
+                term: "Ширина клітинки",
                 description:
-                  "Ширина однієї частотної клітинки: span поділений на bins. Менша ширина дає детальнішу сітку.",
+                  "Ширина однієї частотної клітинки: смуга поділена на кількість клітинок. Менша ширина дає детальнішу сітку.",
               },
             ],
           },
@@ -705,119 +767,119 @@ const resources = {
             title: "Оцінка щільності діапазону",
             items: [
               {
-                term: "Noise floor",
+                term: "Рівень шуму",
                 description:
-                  "Локальна базова щільність шуму, взята як медіана PSD по bins. Від неї система рахує поріг зайнятості.",
+                  "Локальна базова щільність шуму, взята як медіана PSD по клітинках. Від неї система рахує поріг зайнятості.",
               },
               {
-                term: "Threshold",
+                term: "Поріг",
                 description:
-                  "Noise floor плюс Поріг зайнятості. Bins вище цього рівня вважаються зайнятими.",
+                  "Рівень шуму плюс поріг зайнятості. Клітинки вище цього рівня вважаються зайнятими.",
               },
               {
-                term: "Occupied bins",
+                term: "Зайняті клітинки",
                 description:
-                  "Скільки bins перевищили Threshold. Наприклад, 300 / 1024 означає, що 300 клітинок частоти були зайняті.",
+                  "Скільки клітинок перевищили поріг. Наприклад, 300 / 1024 означає, що 300 клітинок частоти були зайняті.",
               },
               {
-                term: "Occupied bandwidth",
+                term: "Зайнята смуга",
                 description:
-                  "Оцінена ширина зайнятої смуги: Occupied bins множиться на Bin width.",
+                  "Оцінена ширина зайнятої смуги: зайняті клітинки множаться на ширину клітинки.",
               },
               {
-                term: "Peak over floor",
+                term: "Пік над шумом",
                 description:
-                  "Наскільки найсильніший bin вищий за noise floor. Велике значення означає виразний пік сигналу.",
+                  "Наскільки найсильніша клітинка вища за рівень шуму. Велике значення означає виразний пік сигналу.",
               },
               {
-                term: "Mean excess",
+                term: "Середнє перевищення",
                 description:
-                  "Середнє перевищення зайнятих bins над Threshold. Показує, наскільки впевнено зайняті клітинки виходять за поріг.",
+                  "Середнє перевищення зайнятих клітинок над порогом. Показує, наскільки впевнено зайняті клітинки виходять за поріг.",
               },
             ],
           },
           {
-            title: "Клітинки таблиці bins",
+            title: "Клітинки таблиці",
             items: [
               {
                 term: "#",
                 description:
-                  "Порядковий номер bin у частотній сітці. Це індекс клітинки, а не частота.",
+                  "Порядковий номер клітинки у частотній сітці. Це індекс клітинки, а не частота.",
               },
               {
-                term: "Frequency, Hz",
+                term: "Частота, Hz",
                 description:
-                  "Центральна частота конкретного bin. За нею можна знайти, де саме в спектрі лежить значення.",
+                  "Центральна частота конкретної клітинки. За нею можна знайти, де саме в спектрі лежить значення.",
               },
               {
-                term: "Density",
+                term: "Щільність",
                 description:
-                  "Лінійне значення спектральної щільності потужності для bin. Якщо IQ має unit=volt, одиниця буде V^2/Hz; інакше normalized unit^2/Hz.",
+                  "Лінійне значення спектральної щільності потужності для клітинки. Якщо IQ має одиницю volt, одиниця буде V^2/Hz; інакше normalized unit^2/Hz.",
               },
               {
-                term: "Density, dB/Hz",
+                term: "Щільність, dB/Hz",
                 description:
-                  "Те саме значення Density у логарифмічній dB-шкалі. Так легше порівнювати слабкі й сильні сигнали.",
+                  "Те саме значення щільності у логарифмічній dB-шкалі. Так легше порівнювати слабкі й сильні сигнали.",
               },
               {
-                term: "Power",
+                term: "Потужність",
                 description:
-                  "Потужність у конкретному bin: Density множиться на ширину bin.",
+                  "Потужність у конкретній клітинці: щільність множиться на ширину клітинки.",
               },
               {
-                term: "Power, dB",
+                term: "Потужність, dB",
                 description:
-                  "Power у dB-шкалі. Це зручно для порівняння окремих частотних клітинок.",
+                  "Потужність у dB-шкалі. Це зручно для порівняння окремих частотних клітинок.",
               },
             ],
           },
           {
-            title: "Налаштування Aaronia і stream",
+            title: "Налаштування Aaronia і потік",
             items: [
               {
-                term: "Start / End",
+                term: "Початок / Кінець",
                 description:
-                  "Поточні межі діапазону, які backend бачить у stream header або відправляє на прилад.",
+                  "Поточні межі діапазону, які бекенд бачить у заголовку потоку або відправляє на прилад.",
               },
               {
-                term: "Center / Span",
+                term: "Центр / Смуга",
                 description:
-                  "Центральна частота і повна ширина діапазону. Для приладу це альтернативний спосіб задати ті самі межі Start / End.",
+                  "Центральна частота і повна ширина діапазону. Для приладу це альтернативний спосіб задати ті самі межі початку й кінця.",
               },
               {
-                term: "RBW з FFT size / RBW / bin",
+                term: "RBW за розміром FFT / RBW / клітинка",
                 description:
                   "Оцінка частотної роздільної здатності. У цьому проєкті вона відповідає ширині однієї FFT-клітинки.",
               },
               {
-                term: "Sample frequency / Sample rate",
+                term: "Частота семплювання",
                 description:
                   "Частота дискретизації IQ-потоку. Вона визначає, скільки IQ-семплів приходить за секунду.",
               },
               {
-                term: "Samples/packet",
+                term: "Семплів/пакет",
                 description:
-                  "Скільки IQ-семплів приходить в одному пакеті stream. Це допоміжна діагностика потоку.",
+                  "Скільки IQ-семплів приходить в одному пакеті потоку. Це допоміжна діагностика потоку.",
               },
               {
-                term: "Payload / Unit",
+                term: "Дані / Одиниця",
                 description:
-                  "Payload описує формат IQ-даних, Unit показує одиницю семплів. Unit важливий для правильного підпису Density.",
+                  "Дані описують формат IQ-потоку, одиниця показує одиницю семплів. Одиниця важлива для правильного підпису щільності.",
               },
               {
-                term: "Remote config",
+                term: "Віддалена конфігурація",
                 description:
-                  "Поточні значення конфігурації, які backend читає з RTSA remote API: reference level, FFT size, window, clock та інші параметри.",
+                  "Поточні значення конфігурації, які бекенд читає з віддаленого API RTSA: рівень опори, розмір FFT, вікно, тактування та інші параметри.",
               },
             ],
           },
           {
-            title: "Експорт, snapshot і порівняння",
+            title: "Експорт, знімок і порівняння",
             items: [
               {
-                term: "Snapshot",
+                term: "Знімок",
                 description:
-                  "Збережений вимір із summary, оцінкою діапазону, bins і статусом приладу. Snapshot потрібен для повторного аналізу та порівняння.",
+                  "Збережений вимір із підсумком, оцінкою діапазону, клітинками і статусом приладу. Знімок потрібен для повторного аналізу та порівняння.",
               },
               {
                 term: "База",
@@ -830,34 +892,34 @@ const resources = {
                   "Другий вимір. Його значення порівнюються з базою, щоб побачити, що стало щільніше, слабше або зсунулось по частоті.",
               },
               {
-                term: "Delta",
+                term: "Різниця",
                 description:
-                  "Різниця між другим виміром і базою. Додатне число означає, що показник у другому snapshot більший.",
+                  "Різниця між другим виміром і базою. Додатне число означає, що показник у другому знімку більший.",
               },
               {
-                term: "Export JSON",
+                term: "Експорт JSON",
                 description:
                   "Повний експорт виміру. Його можна імпортувати назад у застосунок без втрати деталей.",
               },
               {
-                term: "Export CSV",
+                term: "Експорт CSV",
                 description:
-                  "Табличний експорт для Excel/LibreOffice/Python. Містить summary, оцінку діапазону і rows по bins, якщо bins були повернуті.",
+                  "Табличний експорт для Excel, LibreOffice або Python. Містить підсумок, оцінку діапазону і рядки по клітинках, якщо клітинки були повернуті.",
               },
               {
                 term: "Як зробити CSV файл",
                 description:
-                  "CSV має бути plain text у кодуванні UTF-8 з комою як роздільником. Перший рядок - назви колонок: record_type, name, value, unit, index, frequency_hz, density_linear, density_db_per_hz, power_linear, power_db. Для summary-рядків ставте record_type capture, range або summary і заповнюйте name, value, unit. Для частотних клітинок ставте record_type bin і заповнюйте index, frequency_hz, density_linear, density_db_per_hz, power_linear, power_db.",
+                  "CSV має бути простим текстом у кодуванні UTF-8 з комою як роздільником. Перший рядок - назви колонок: record_type, name, value, unit, index, frequency_hz, density_linear, density_db_per_hz, power_linear, power_db. Для підсумкових рядків ставте record_type capture, range або summary і заповнюйте name, value, unit. Для частотних клітинок ставте record_type bin і заповнюйте index, frequency_hz, density_linear, density_db_per_hz, power_linear, power_db.",
               },
               {
                 term: "CSV і імпорт",
                 description:
-                  "У цьому інтерфейсі кнопка Імпорт JSON приймає повний JSON snapshot, бо тільки JSON зберігає всі дані для порівняння без втрат. CSV використовуйте як табличний файл для аналізу або передачі чисел; щоб повернути вимір назад у застосунок, експортуйте й імпортуйте JSON.",
+                  "У цьому інтерфейсі кнопка Імпорт JSON приймає повний JSON-знімок, бо тільки JSON зберігає всі дані для порівняння без втрат. CSV використовуйте як табличний файл для аналізу або передачі чисел; щоб повернути вимір назад у застосунок, експортуйте й імпортуйте JSON.",
               },
               {
-                term: "AI пояснення",
+                term: "Пояснення ШІ",
                 description:
-                  "Опційний текстовий висновок по двох snapshot-ах. Він не замінює числову таблицю, а пояснює її людською мовою.",
+                  "Опційний текстовий висновок по двох знімках. Він не замінює числову таблицю, а пояснює її людською мовою.",
               },
             ],
           },

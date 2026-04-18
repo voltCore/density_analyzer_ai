@@ -321,7 +321,7 @@ export default function App() {
           </button>
           <div className="mode-pill">
             <span>{t("app.source")}</span>
-            <strong>{settings?.source_mode ?? "..."}</strong>
+            <strong>{settings ? t(`sourceMode.${settings.source_mode}`) : "..."}</strong>
           </div>
         </div>
       </section>
@@ -1000,7 +1000,7 @@ function DeviceStatusPanel({ status }: { status: DeviceStatusResponse | null }) 
       <section className="settings-panel">
         <h2>{t("device.title")}</h2>
         <div className="settings-grid">
-          <InfoItem label="Status" value={t("device.waitingBackend")} />
+          <InfoItem label={t("device.status")} value={t("device.waitingBackend")} />
         </div>
       </section>
     );
@@ -1034,21 +1034,47 @@ function DeviceStatusPanel({ status }: { status: DeviceStatusResponse | null }) 
       <div className="panel-title-row">
         <h2>{t("device.title")}</h2>
         <span className={status.reachable ? "ok-chip" : "bad-chip"}>
-          {status.reachable ? status.health_state ?? t("device.online") : t("device.offline")}
+          {status.reachable
+            ? localizeDeviceValue(status.health_state ?? t("device.online"), t)
+            : t("device.offline")}
         </span>
       </div>
 
       <div className="settings-grid">
-        <InfoItem label={t("device.mission")} value={status.info.mission ?? t("device.unknown")} />
-        <InfoItem label={t("device.input")} value={status.inputs.join(", ") || t("device.mainInput")} />
-        <InfoItem label={t("device.payload")} value={stream?.payload ?? t("device.unknown")} />
-        <InfoItem label={t("device.control")} value={status.endpoints.control ?? "mock"} />
+        <InfoItem
+          label={t("device.mission")}
+          value={
+            typeof status.info.mission === "string"
+              ? localizeDeviceValue(status.info.mission, t)
+              : status.info.mission ?? t("device.unknown")
+          }
+        />
+        <InfoItem
+          label={t("device.input")}
+          value={
+            status.inputs.length > 0
+              ? status.inputs.map((input) => localizeDeviceValue(input, t)).join(", ")
+              : t("device.mainInput")
+          }
+        />
+        <InfoItem
+          label={t("device.payload")}
+          value={stream?.payload ? localizeDeviceValue(stream.payload, t) : t("device.unknown")}
+        />
+        <InfoItem
+          label={t("device.control")}
+          value={
+            status.endpoints.control
+              ? localizeDeviceValue(status.endpoints.control, t)
+              : localizeDeviceValue("mock", t)
+          }
+        />
       </div>
 
       <h3>{t("device.currentStreamHeader")}</h3>
       <div className="settings-grid">
         {currentValues.map(([label, value, unit]) => (
-          <InfoItem key={label} label={label} value={formatMaybeNumber(value, unit)} />
+          <InfoItem key={label} label={label} value={formatMaybeNumber(value, unit, t)} />
         ))}
       </div>
 
@@ -1059,8 +1085,8 @@ function DeviceStatusPanel({ status }: { status: DeviceStatusResponse | null }) 
           return (
             <InfoItem
               key={key}
-              label={setting?.label ?? key}
-              value={formatSettingValue(setting?.value, setting?.unit)}
+              label={localizeDeviceLabel(key, setting?.label, t)}
+              value={formatSettingValue(setting?.value, setting?.unit, t)}
             />
           );
         })}
@@ -1102,11 +1128,13 @@ function CaptureSettingsPanel({ settings }: { settings: CaptureSettings }) {
 
 function InfoItem({ label, value }: { label: string; value: string | number | boolean | null }) {
   const { t } = useTranslation();
+  const displayValue =
+    typeof value === "boolean" ? (value ? t("status.yes") : t("status.no")) : String(value ?? t("device.noData"));
 
   return (
     <div className="info-item">
       <span>{label}</span>
-      <strong>{String(value ?? t("device.noData"))}</strong>
+      <strong>{displayValue}</strong>
     </div>
   );
 }
@@ -1147,21 +1175,78 @@ function formatDb(value: number) {
   return `${formatCompactNumber(value)} dB`;
 }
 
-function formatMaybeNumber(value: string | number | boolean | null | undefined, unit: string | null) {
+function formatMaybeNumber(
+  value: string | number | boolean | null | undefined,
+  unit: string | null,
+  t: TFunction,
+) {
   if (typeof value === "number") {
     return unit === "Hz" ? `${formatHz(value)} Hz` : formatCompactNumber(value);
   }
-  return value ?? i18nInstance.t("device.noData");
+  if (typeof value === "string") {
+    return localizeDeviceValue(value, t);
+  }
+  return value ?? t("device.noData");
 }
 
-function formatSettingValue(value: string | number | boolean | null | undefined, unit?: string | null) {
+function formatSettingValue(
+  value: string | number | boolean | null | undefined,
+  unit: string | null | undefined,
+  t: TFunction,
+) {
   if (typeof value === "number" && unit === "Frequency") {
     return `${formatHz(value)} Hz`;
   }
   if (typeof value === "number" && unit) {
     return `${formatCompactNumber(value)} ${unit}`;
   }
-  return value ?? i18nInstance.t("device.noData");
+  if (typeof value === "string") {
+    return localizeDeviceValue(value, t);
+  }
+  return value ?? t("device.noData");
+}
+
+function localizeDeviceLabel(key: string, label: string | undefined, t: TFunction) {
+  const directKey = `deviceLabels.${key}`;
+  const direct = t(directKey, { defaultValue: "" });
+  if (direct) {
+    return direct;
+  }
+
+  if (!label) {
+    return key;
+  }
+
+  const normalizedLabel = normalizeDeviceToken(label);
+  const labelKey = `deviceLabels.${normalizedLabel}`;
+  const translated = t(labelKey, { defaultValue: "" });
+  return translated || label;
+}
+
+function localizeDeviceValue(value: string, t: TFunction) {
+  const normalized = normalizeDeviceToken(value);
+  const translated = t(`deviceValues.${normalized}`, { defaultValue: "" });
+  if (translated) {
+    return translated;
+  }
+
+  if (/^\d+\s*ghz$/i.test(value)) {
+    return value.replace(/\s*ghz$/i, " GHz");
+  }
+  if (/^\d+\s*mhz$/i.test(value)) {
+    return value.replace(/\s*mhz$/i, " MHz");
+  }
+
+  return value;
+}
+
+function normalizeDeviceToken(value: string) {
+  return value
+    .trim()
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
 }
 
 function createExportSnapshot(
