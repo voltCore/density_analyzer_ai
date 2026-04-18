@@ -97,9 +97,7 @@ class StreamingDensityAccumulator:
             padded = np.pad(self._pending, (0, self.bins - self._pending.size))
             self._add_segments(padded.reshape((1, self.bins)))
 
-        psd = self._power_sum / self.averaged_segments / (
-            self.sample_rate_hz * self._window_power
-        )
+        psd = self._power_sum / self.averaged_segments / (self.sample_rate_hz * self._window_power)
         return _finalize_density(
             psd.astype(np.float64, copy=False),
             frequency_from_hz=self.frequency_from_hz,

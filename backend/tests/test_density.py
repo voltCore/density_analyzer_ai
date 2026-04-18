@@ -51,9 +51,9 @@ def test_streaming_density_matches_batch_density() -> None:
     frequency_to_hz = 101_000_000.0
     bins = 64
     rng = np.random.default_rng(7)
-    samples = (
-        rng.standard_normal(bins * 5 + 17) + 1j * rng.standard_normal(bins * 5 + 17)
-    ).astype(np.complex128)
+    samples = (rng.standard_normal(bins * 5 + 17) + 1j * rng.standard_normal(bins * 5 + 17)).astype(
+        np.complex128
+    )
 
     batch = compute_density(
         samples,

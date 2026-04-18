@@ -56,9 +56,7 @@ async def explain_signal_comparison(
             )
             response.raise_for_status()
     except httpx.TimeoutException as exc:
-        raise AIComparisonUnavailableError(
-            _localized_message(language, "timeout")
-        ) from exc
+        raise AIComparisonUnavailableError(_localized_message(language, "timeout")) from exc
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code
         api_detail = _extract_error_message(exc.response)
@@ -76,9 +74,7 @@ async def explain_signal_comparison(
             _localized_message(language, "http_error", status_code=status_code, detail=detail)
         ) from exc
     except httpx.TransportError as exc:
-        raise AIComparisonUnavailableError(
-            _localized_message(language, "transport")
-        ) from exc
+        raise AIComparisonUnavailableError(_localized_message(language, "transport")) from exc
 
     content = _extract_chat_message(response.json())
     if not content:
@@ -112,10 +108,16 @@ def build_comparison_context(payload: AIComparisonRequest) -> dict[str, Any]:
     return {
         "response_language": language,
         "density_definition": _localized_message(language, "density_definition"),
+        "answer_style": _localized_message(language, "answer_style"),
         "comparison_quality": "direct" if not caveats else "caution",
+        "signal_1_role": "baseline",
+        "signal_2_role": "comparison",
         "baseline": _signal_snapshot_context(baseline_name, payload.baseline),
         "comparison": _signal_snapshot_context(comparison_name, payload.comparison),
         "deltas_comparison_minus_baseline": deltas,
+        "deltas_signal_2_minus_signal_1": deltas,
+        "coverage_winner": _coverage_winner(payload.baseline, payload.comparison, language),
+        "energy_winner": _energy_winner(payload.baseline, payload.comparison, language),
         "local_assessment": local_assessment,
         "caveats": caveats,
     }
@@ -187,6 +189,82 @@ def _comparison_deltas(
         "peak_frequency_hz": _rounded(
             comparison.summary.peak_frequency_hz - baseline.summary.peak_frequency_hz
         ),
+    }
+
+
+def _coverage_winner(
+    baseline: DensityResponse,
+    comparison: DensityResponse,
+    language: LanguageCode,
+) -> dict[str, str | float]:
+    occupancy_delta = _rounded(
+        comparison.range_assessment.occupancy_percent - baseline.range_assessment.occupancy_percent
+    )
+    bandwidth_delta_hz = _rounded(
+        comparison.range_assessment.occupied_bandwidth_hz
+        - baseline.range_assessment.occupied_bandwidth_hz
+    )
+    if abs(occupancy_delta) < 0.5 and abs(bandwidth_delta_hz) < 1.0:
+        winner = "tie"
+        winner_label = _localized_message(language, "tie_winner_name")
+    elif occupancy_delta > 0 or (abs(occupancy_delta) < 0.5 and bandwidth_delta_hz > 0):
+        winner = "signal_2"
+        winner_label = _localized_message(language, "signal_2")
+    else:
+        winner = "signal_1"
+        winner_label = _localized_message(language, "signal_1")
+
+    return {
+        "winner": winner,
+        "winner_label": winner_label,
+        "signal_1_occupancy_percent": _rounded(baseline.range_assessment.occupancy_percent),
+        "signal_2_occupancy_percent": _rounded(comparison.range_assessment.occupancy_percent),
+        "difference_percentage_points_signal_2_minus_signal_1": occupancy_delta,
+        "signal_1_occupied_bandwidth_hz": _rounded(baseline.range_assessment.occupied_bandwidth_hz),
+        "signal_2_occupied_bandwidth_hz": _rounded(
+            comparison.range_assessment.occupied_bandwidth_hz
+        ),
+        "difference_occupied_bandwidth_hz_signal_2_minus_signal_1": bandwidth_delta_hz,
+    }
+
+
+def _energy_winner(
+    baseline: DensityResponse,
+    comparison: DensityResponse,
+    language: LanguageCode,
+) -> dict[str, str | float]:
+    mean_delta = _rounded(
+        comparison.summary.mean_density_db_per_hz - baseline.summary.mean_density_db_per_hz
+    )
+    peak_delta = _rounded(
+        comparison.summary.peak_density_db_per_hz - baseline.summary.peak_density_db_per_hz
+    )
+    power_delta = _rounded(
+        comparison.summary.integrated_power_db - baseline.summary.integrated_power_db
+    )
+    score = (mean_delta > 0) + (peak_delta > 0) + (power_delta > 0)
+    if abs(mean_delta) < 0.5 and abs(peak_delta) < 0.5 and abs(power_delta) < 0.5:
+        winner = "tie"
+        winner_label = _localized_message(language, "tie_winner_name")
+    elif score >= 2:
+        winner = "signal_2"
+        winner_label = _localized_message(language, "signal_2")
+    else:
+        winner = "signal_1"
+        winner_label = _localized_message(language, "signal_1")
+
+    return {
+        "winner": winner,
+        "winner_label": winner_label,
+        "signal_1_mean_density_db_per_hz": _rounded(baseline.summary.mean_density_db_per_hz),
+        "signal_2_mean_density_db_per_hz": _rounded(comparison.summary.mean_density_db_per_hz),
+        "difference_mean_density_db_signal_2_minus_signal_1": mean_delta,
+        "signal_1_peak_density_db_per_hz": _rounded(baseline.summary.peak_density_db_per_hz),
+        "signal_2_peak_density_db_per_hz": _rounded(comparison.summary.peak_density_db_per_hz),
+        "difference_peak_density_db_signal_2_minus_signal_1": peak_delta,
+        "signal_1_integrated_power_db": _rounded(baseline.summary.integrated_power_db),
+        "signal_2_integrated_power_db": _rounded(comparison.summary.integrated_power_db),
+        "difference_integrated_power_db_signal_2_minus_signal_1": power_delta,
     }
 
 
@@ -307,7 +385,9 @@ def _system_prompt(language: LanguageCode) -> str:
             "Порівнюй тільки за наданими числовими даними: зайнятість діапазону, "
             "occupied bandwidth, mean/peak density, integrated power, noise floor "
             "і пікові bins. Якщо точного пояснення з даних немає, прямо скажи це "
-            "і запропонуй найбільш імовірну технічну гіпотезу без вигаданих фактів."
+            "і запропонуй найбільш імовірну технічну гіпотезу без вигаданих фактів. "
+            "Завжди розділяй висновок про частотне покриття діапазону і висновок "
+            "про енергетичну силу сигналу."
         )
 
     return (
@@ -315,7 +395,8 @@ def _system_prompt(language: LanguageCode) -> str:
         "Compare only using the provided numeric data: range occupancy, occupied bandwidth, "
         "mean/peak density, integrated power, noise floor, and peak bins. If the data does "
         "not support a precise explanation, say that directly and provide the most likely "
-        "technical hypothesis without inventing facts."
+        "technical hypothesis without inventing facts. Always separate the conclusion about "
+        "frequency-range coverage from the conclusion about signal energy/strength."
     )
 
 
@@ -323,16 +404,36 @@ def _user_prompt(language: LanguageCode, context: dict[str, Any]) -> str:
     serialized_context = json.dumps(context, ensure_ascii=False, indent=2)
     if language == "uk":
         return (
-            "Порівняй два snapshots радіосигналів. Дай детальне пояснення: "
-            "1) який сигнал щільніший; 2) точні числові причини; "
-            "3) що може пояснювати різницю; 4) які обмеження має такий висновок.\n\n"
+            "Порівняй два snapshots радіосигналів у стилі технічного висновку. "
+            "Називай baseline як “Сигнал 1”, comparison як “Сигнал 2”. "
+            "Обов'язково дотримуйся такої структури:\n"
+            "1) Почни з фрази: “Якщо брати саме метрику “Щільність діапазону”, "
+            "то ...”. Вкажи Сигнал 1, Сигнал 2 і різницю у процентних пунктах.\n"
+            "2) Окремо підтвердь або уточни це рядком “Зайнята смуга”, вкажи Hz "
+            "і приблизну різницю в MHz.\n"
+            "3) Дай короткий висновок: хто щільніший саме за частотним заповненням "
+            "і чи він ширший/розмазаний по більшій смузі.\n"
+            "4) Потім почни абзац “Але важливий нюанс: за енергетичними метриками ...”. "
+            "Порівняй середню щільність, пікову щільність та інтегральну потужність. "
+            "Поясни, що в dB значення ближче до нуля є більшим.\n"
+            "5) Заверши блоком “Тому правильне формулювання таке:” і фінальними рядками "
+            "“1 = ...” та “2 = ...”.\n"
+            "Не змішуй “щільніший за покриттям діапазону” з “потужніший енергетично”. "
+            "Якщо обидва висновки вказують на різні сигнали, прямо так і напиши.\n\n"
             f"Дані:\n{serialized_context}"
         )
 
     return (
-        "Compare two radio-signal snapshots. Give a detailed explanation: "
-        "1) which signal is denser; 2) the exact numeric reasons; "
-        "3) what may explain the difference; 4) what limitations this conclusion has.\n\n"
+        "Compare two radio-signal snapshots as a technical conclusion. "
+        "Call the baseline “Signal 1” and the comparison “Signal 2”. "
+        "Use this structure: first compare Range density with both values and the "
+        "percentage-point difference; then confirm or qualify it with Occupied bandwidth "
+        "in Hz and approximate MHz difference; then state which signal is denser by "
+        "frequency coverage; then add an explicit energy nuance comparing mean density, "
+        "peak density, and integrated power, explaining that in dB values closer to zero "
+        "are larger; finish with “Correct wording:” plus lines “1 = ...” and “2 = ...”. "
+        "Do not mix frequency-coverage density with energy strength. If those point to "
+        "different signals, say that directly.\n\n"
         f"Data:\n{serialized_context}"
     )
 
@@ -376,10 +477,17 @@ _EN_MESSAGES = {
     "empty_response": "AI API returned no explanation text.",
     "baseline_name": "Baseline",
     "comparison_name": "Comparison",
+    "signal_1": "Signal 1",
+    "signal_2": "Signal 2",
     "density_definition": (
         "Treat the denser signal as the one with the larger share of FFT bins above "
         "noise floor + occupancy threshold. If occupancy difference is small, also "
         "consider occupied bandwidth, mean density, and integrated power."
+    ),
+    "answer_style": (
+        "Separate frequency coverage from energy strength. Range density and occupied "
+        "bandwidth answer which signal covers more of the frequency range; mean density, "
+        "peak density, and integrated power answer which signal is energetically stronger."
     ),
     "direction_higher": "higher",
     "direction_lower": "lower",
@@ -421,10 +529,18 @@ _UK_MESSAGES = {
     "empty_response": "AI API відповів без тексту пояснення.",
     "baseline_name": "База",
     "comparison_name": "Порівняння",
+    "signal_1": "Сигнал 1",
+    "signal_2": "Сигнал 2",
     "density_definition": (
         "Щільнішим вважай сигнал із більшою часткою FFT bins вище "
         "noise floor + occupancy threshold. Якщо різниця зайнятості мала, "
         "додатково враховуй occupied bandwidth, mean density та integrated power."
+    ),
+    "answer_style": (
+        "Розділяй частотне покриття і енергетичну силу. Range density та occupied "
+        "bandwidth відповідають, який сигнал займає більшу частину частотного діапазону; "
+        "mean density, peak density та integrated power відповідають, який сигнал "
+        "енергетично сильніший."
     ),
     "direction_higher": "вища",
     "direction_lower": "нижча",

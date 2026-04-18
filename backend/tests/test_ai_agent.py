@@ -89,6 +89,36 @@ def test_build_comparison_context_uses_ukrainian_when_requested() -> None:
     assert any("немає bin-level rows" in caveat for caveat in context["caveats"])
 
 
+def test_build_comparison_context_separates_coverage_and_energy_winners() -> None:
+    payload = AIComparisonRequest(
+        baseline_name="Signal A",
+        comparison_name="Signal B",
+        response_language="uk",
+        baseline=_density_response(
+            occupancy_percent=48.34,
+            occupied_bins=495,
+            mean_density_db_per_hz=-47.093,
+            peak_density_db_per_hz=-43.107,
+            integrated_power_db=34.754,
+        ),
+        comparison=_density_response(
+            occupancy_percent=47.339,
+            occupied_bins=485,
+            mean_density_db_per_hz=-43.69,
+            peak_density_db_per_hz=-29.213,
+            integrated_power_db=38.278,
+        ),
+    )
+
+    context = build_comparison_context(payload)
+
+    assert context["coverage_winner"]["winner"] == "signal_1"
+    assert context["energy_winner"]["winner"] == "signal_2"
+    assert context["signal_1_role"] == "baseline"
+    assert context["signal_2_role"] == "comparison"
+    assert "частотне покриття" in context["answer_style"]
+
+
 def test_explain_signal_comparison_requires_api_key() -> None:
     payload = AIComparisonRequest(
         baseline_name="Signal A",
@@ -123,6 +153,8 @@ def _density_response(
     occupancy_percent: float,
     occupied_bins: int,
     mean_density_db_per_hz: float = -44.5,
+    peak_density_db_per_hz: float = -41.0,
+    integrated_power_db: float = 16.2,
     include_bins: bool = True,
 ) -> DensityResponse:
     span_hz = frequency_to_hz - frequency_from_hz
@@ -145,10 +177,10 @@ def _density_response(
             mean_density_linear=1.0,
             mean_density_db_per_hz=mean_density_db_per_hz,
             peak_density_linear=2.0,
-            peak_density_db_per_hz=-41.0,
+            peak_density_db_per_hz=peak_density_db_per_hz,
             peak_frequency_hz=(frequency_from_hz + frequency_to_hz) / 2,
             integrated_power_linear=3.0,
-            integrated_power_db=16.2,
+            integrated_power_db=integrated_power_db,
         ),
         capture_settings=CaptureSettings(
             frequency_from_hz=frequency_from_hz,
