@@ -1,0 +1,15 @@
+.DS_Store
+.env
+.venv
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.ty/
+node_modules/
+dist/
+*.tsbuildinfo
+backend/data/
+backend/.env
+backend/.venv/
+frontend/.env
+frontend/.vite/

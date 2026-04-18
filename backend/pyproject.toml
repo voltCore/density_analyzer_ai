@@ -1,0 +1,42 @@
+[project]
+name = "spectrana-density-backend"
+version = "0.1.0"
+description = "Backend for calculating numerical signal density from Aaronia SPECTRAN V6 IQ bins."
+readme = "../README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "httpx>=0.28.0",
+    "numpy>=2.1.0",
+    "pydantic-settings>=2.7.0",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "ruff>=0.11.0",
+    "ty>=0.0.1a1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "N", "RUF", "SIM", "UP"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/spectrana_density"]
+
+[tool.ty.environment]
+python = "./.venv"
+python-version = "3.12"
