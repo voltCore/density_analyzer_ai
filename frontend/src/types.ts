@@ -157,6 +157,7 @@ export type MeasurementStored = MeasurementSummary & {
 export type AIComparisonRequest = {
   baseline_name: string | null;
   comparison_name: string | null;
+  response_language: "en" | "uk";
   baseline: DensityResponse;
   comparison: DensityResponse;
 };

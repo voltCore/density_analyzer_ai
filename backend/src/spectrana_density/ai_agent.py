@@ -11,6 +11,8 @@ import httpx
 from spectrana_density.config import Settings
 from spectrana_density.schemas import AIComparisonRequest, AIComparisonResponse, DensityResponse
 
+LanguageCode = str
+
 
 class AIComparisonUnavailableError(RuntimeError):
     """Raised when the remote AI explanation cannot be generated."""
@@ -23,31 +25,21 @@ async def explain_signal_comparison(
     api_key = (settings.ai_api_key or "").strip()
     if not api_key:
         raise AIComparisonUnavailableError(
-            "AI аналіз недоступний: додайте OPENAI_API_KEY або AI_API_KEY у backend/.env."
+            _localized_message(payload.response_language, "missing_api_key")
         )
 
     context = build_comparison_context(payload)
+    language = payload.response_language
     request_body = {
         "model": settings.ai_model,
         "messages": [
             {
                 "role": "system",
-                "content": (
-                    "Ти RF-аналітик для спектральних вимірів. Пиши українською. "
-                    "Порівнюй тільки за наданими числовими даними: зайнятість діапазону, "
-                    "occupied bandwidth, mean/peak density, integrated power, noise floor "
-                    "і пікові bins. Якщо точного пояснення з даних немає, прямо скажи це "
-                    "і запропонуй найбільш імовірну технічну гіпотезу без вигаданих фактів."
-                ),
+                "content": _system_prompt(language),
             },
             {
                 "role": "user",
-                "content": (
-                    "Порівняй два snapshots радіосигналів. Дай детальне пояснення: "
-                    "1) який сигнал щільніший; 2) точні числові причини; "
-                    "3) що може пояснювати різницю; 4) які обмеження має такий висновок.\n\n"
-                    f"Дані:\n{json.dumps(context, ensure_ascii=False, indent=2)}"
-                ),
+                "content": _user_prompt(language, context),
             },
         ],
     }
@@ -65,8 +57,7 @@ async def explain_signal_comparison(
             response.raise_for_status()
     except httpx.TimeoutException as exc:
         raise AIComparisonUnavailableError(
-            "AI аналіз недоступний: запит до AI API перевищив час очікування. "
-            "Потрібен стабільний інтернет."
+            _localized_message(language, "timeout")
         ) from exc
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code
@@ -74,22 +65,24 @@ async def explain_signal_comparison(
         if api_detail:
             detail = api_detail
         elif status_code in {401, 403}:
-            detail = "перевірте OPENAI_API_KEY або AI_API_KEY."
+            detail = _localized_message(language, "auth_detail")
         elif status_code == 404:
-            detail = "перевірте AI_BASE_URL та AI_MODEL."
+            detail = _localized_message(language, "not_found_detail")
         elif status_code == 429:
-            detail = "AI API тимчасово обмежив запити або вичерпано квоту."
+            detail = _localized_message(language, "rate_limit_detail")
         else:
-            detail = "перевірте інтернет, AI_BASE_URL і AI_MODEL."
-        raise AIComparisonUnavailableError(f"AI API повернув HTTP {status_code}: {detail}") from exc
+            detail = _localized_message(language, "generic_http_detail")
+        raise AIComparisonUnavailableError(
+            _localized_message(language, "http_error", status_code=status_code, detail=detail)
+        ) from exc
     except httpx.TransportError as exc:
         raise AIComparisonUnavailableError(
-            "AI аналіз недоступний: немає з'єднання з AI API. Потрібен інтернет."
+            _localized_message(language, "transport")
         ) from exc
 
     content = _extract_chat_message(response.json())
     if not content:
-        raise AIComparisonUnavailableError("AI API відповів без тексту пояснення.")
+        raise AIComparisonUnavailableError(_localized_message(language, "empty_response"))
 
     return AIComparisonResponse(
         provider="openai-compatible-chat",
@@ -104,22 +97,21 @@ async def explain_signal_comparison(
 
 
 def build_comparison_context(payload: AIComparisonRequest) -> dict[str, Any]:
-    baseline_name = payload.baseline_name or "База"
-    comparison_name = payload.comparison_name or "Порівняння"
+    language = payload.response_language
+    baseline_name = payload.baseline_name or _localized_message(language, "baseline_name")
+    comparison_name = payload.comparison_name or _localized_message(language, "comparison_name")
     deltas = _comparison_deltas(payload.baseline, payload.comparison)
     local_assessment = _local_winner(
         baseline_name=baseline_name,
         comparison_name=comparison_name,
         deltas=deltas,
+        language=language,
     )
-    caveats = _comparison_caveats(payload.baseline, payload.comparison)
+    caveats = _comparison_caveats(payload.baseline, payload.comparison, language)
 
     return {
-        "density_definition": (
-            "Щільнішим вважай сигнал із більшою часткою FFT bins вище "
-            "noise floor + occupancy threshold. Якщо різниця зайнятості мала, "
-            "додатково враховуй occupied bandwidth, mean density та integrated power."
-        ),
+        "response_language": language,
+        "density_definition": _localized_message(language, "density_definition"),
         "comparison_quality": "direct" if not caveats else "caution",
         "baseline": _signal_snapshot_context(baseline_name, payload.baseline),
         "comparison": _signal_snapshot_context(comparison_name, payload.comparison),
@@ -202,34 +194,36 @@ def _local_winner(
     baseline_name: str,
     comparison_name: str,
     deltas: dict[str, float],
+    language: LanguageCode,
 ) -> dict[str, str]:
+    labels = _metric_labels(language)
     checks = [
         (
             deltas["occupancy_percent_points"],
             0.5,
             "occupancy_percent",
-            "частка зайнятих bins",
+            labels["occupancy_percent"],
             "percentage points",
         ),
         (
             deltas["occupied_bandwidth_hz"],
             1.0,
             "occupied_bandwidth_hz",
-            "зайнята смуга",
+            labels["occupied_bandwidth"],
             "Hz",
         ),
         (
             deltas["mean_density_db"],
             0.5,
             "mean_density_db_per_hz",
-            "середня спектральна щільність",
+            labels["mean_density"],
             "dB",
         ),
         (
             deltas["integrated_power_db"],
             0.5,
             "integrated_power_db",
-            "інтегральна потужність",
+            labels["integrated_power"],
             "dB",
         ),
     ]
@@ -238,30 +232,38 @@ def _local_winner(
         if abs(delta) >= threshold:
             winner = "comparison" if delta > 0 else "baseline"
             winner_name = comparison_name if delta > 0 else baseline_name
-            direction = "вища" if delta > 0 else "нижча"
+            direction = _localized_message(
+                language,
+                "direction_higher" if delta > 0 else "direction_lower",
+            )
             return {
                 "winner": winner,
                 "winner_name": winner_name,
-                "numeric_basis": (
-                    f"{winner_name} щільніший за метрикою '{label}': "
-                    f"delta comparison-baseline = {delta:g} {unit}, тобто у snapshot "
-                    f"'Порівняння' ця метрика {direction}."
+                "numeric_basis": _localized_message(
+                    language,
+                    "numeric_basis",
+                    winner_name=winner_name,
+                    label=label,
+                    delta=f"{delta:g}",
+                    unit=unit,
+                    direction=direction,
                 ),
                 "primary_metric": metric,
             }
 
     return {
         "winner": "tie",
-        "winner_name": "приблизно однаково",
-        "numeric_basis": (
-            "Різниця у зайнятості, occupied bandwidth, mean density та integrated power "
-            "менша за практичні пороги для впевненого висновку."
-        ),
+        "winner_name": _localized_message(language, "tie_winner_name"),
+        "numeric_basis": _localized_message(language, "tie_numeric_basis"),
         "primary_metric": "no_clear_delta",
     }
 
 
-def _comparison_caveats(baseline: DensityResponse, comparison: DensityResponse) -> list[str]:
+def _comparison_caveats(
+    baseline: DensityResponse,
+    comparison: DensityResponse,
+    language: LanguageCode,
+) -> list[str]:
     caveats: list[str] = []
     if not _same_number(
         baseline.capture_settings.frequency_from_hz,
@@ -270,20 +272,18 @@ def _comparison_caveats(baseline: DensityResponse, comparison: DensityResponse) 
         baseline.capture_settings.frequency_to_hz,
         comparison.capture_settings.frequency_to_hz,
     ):
-        caveats.append(
-            "Діапазони частот різні, тому щільність порівнюється всередині кожного діапазону."
-        )
+        caveats.append(_localized_message(language, "caveat_frequency_range"))
     if baseline.capture_settings.bins != comparison.capture_settings.bins:
-        caveats.append("Кількість FFT bins різна; bin-level порівняння не є прямим.")
+        caveats.append(_localized_message(language, "caveat_bins"))
     if not _same_number(
         baseline.capture_settings.occupancy_threshold_db,
         comparison.capture_settings.occupancy_threshold_db,
     ):
-        caveats.append("Поріг зайнятості різний; occupancy_percent може зміщуватися.")
+        caveats.append(_localized_message(language, "caveat_threshold"))
     if baseline.capture_settings.window != comparison.capture_settings.window:
-        caveats.append("FFT window різний; peak та leakage можуть відрізнятися.")
+        caveats.append(_localized_message(language, "caveat_window"))
     if not baseline.bins or not comparison.bins:
-        caveats.append("Для одного зі snapshot-ів немає bin-level rows; AI бачить тільки summary.")
+        caveats.append(_localized_message(language, "caveat_missing_bins"))
     return caveats
 
 
@@ -298,6 +298,155 @@ def _top_density_bins(result: DensityResponse) -> list[dict[str, float | int]]:
         }
         for item in bins
     ]
+
+
+def _system_prompt(language: LanguageCode) -> str:
+    if language == "uk":
+        return (
+            "Ти RF-аналітик для спектральних вимірів. Відповідай українською. "
+            "Порівнюй тільки за наданими числовими даними: зайнятість діапазону, "
+            "occupied bandwidth, mean/peak density, integrated power, noise floor "
+            "і пікові bins. Якщо точного пояснення з даних немає, прямо скажи це "
+            "і запропонуй найбільш імовірну технічну гіпотезу без вигаданих фактів."
+        )
+
+    return (
+        "You are an RF analyst for spectral measurements. Respond in English. "
+        "Compare only using the provided numeric data: range occupancy, occupied bandwidth, "
+        "mean/peak density, integrated power, noise floor, and peak bins. If the data does "
+        "not support a precise explanation, say that directly and provide the most likely "
+        "technical hypothesis without inventing facts."
+    )
+
+
+def _user_prompt(language: LanguageCode, context: dict[str, Any]) -> str:
+    serialized_context = json.dumps(context, ensure_ascii=False, indent=2)
+    if language == "uk":
+        return (
+            "Порівняй два snapshots радіосигналів. Дай детальне пояснення: "
+            "1) який сигнал щільніший; 2) точні числові причини; "
+            "3) що може пояснювати різницю; 4) які обмеження має такий висновок.\n\n"
+            f"Дані:\n{serialized_context}"
+        )
+
+    return (
+        "Compare two radio-signal snapshots. Give a detailed explanation: "
+        "1) which signal is denser; 2) the exact numeric reasons; "
+        "3) what may explain the difference; 4) what limitations this conclusion has.\n\n"
+        f"Data:\n{serialized_context}"
+    )
+
+
+def _metric_labels(language: LanguageCode) -> dict[str, str]:
+    if language == "uk":
+        return {
+            "occupancy_percent": "частка зайнятих bins",
+            "occupied_bandwidth": "зайнята смуга",
+            "mean_density": "середня спектральна щільність",
+            "integrated_power": "інтегральна потужність",
+        }
+
+    return {
+        "occupancy_percent": "occupied bins share",
+        "occupied_bandwidth": "occupied bandwidth",
+        "mean_density": "mean spectral density",
+        "integrated_power": "integrated power",
+    }
+
+
+def _localized_message(language: LanguageCode, key: str, **values: object) -> str:
+    messages = _UK_MESSAGES if language == "uk" else _EN_MESSAGES
+    return messages[key].format(**values)
+
+
+_EN_MESSAGES = {
+    "missing_api_key": (
+        "AI analysis is unavailable: add OPENAI_API_KEY or AI_API_KEY to backend/.env."
+    ),
+    "timeout": (
+        "AI analysis is unavailable: the AI API request timed out. A stable internet "
+        "connection is required."
+    ),
+    "auth_detail": "check OPENAI_API_KEY or AI_API_KEY.",
+    "not_found_detail": "check AI_BASE_URL and AI_MODEL.",
+    "rate_limit_detail": "the AI API temporarily limited requests or quota is exhausted.",
+    "generic_http_detail": "check internet access, AI_BASE_URL, and AI_MODEL.",
+    "http_error": "AI API returned HTTP {status_code}: {detail}",
+    "transport": "AI analysis is unavailable: cannot connect to the AI API. Internet is required.",
+    "empty_response": "AI API returned no explanation text.",
+    "baseline_name": "Baseline",
+    "comparison_name": "Comparison",
+    "density_definition": (
+        "Treat the denser signal as the one with the larger share of FFT bins above "
+        "noise floor + occupancy threshold. If occupancy difference is small, also "
+        "consider occupied bandwidth, mean density, and integrated power."
+    ),
+    "direction_higher": "higher",
+    "direction_lower": "lower",
+    "numeric_basis": (
+        "{winner_name} is denser by the '{label}' metric: delta comparison-baseline = "
+        "{delta} {unit}; in the comparison snapshot this metric is {direction}."
+    ),
+    "tie_winner_name": "approximately equal",
+    "tie_numeric_basis": (
+        "The difference in occupancy, occupied bandwidth, mean density, and integrated "
+        "power is below practical thresholds for a confident conclusion."
+    ),
+    "caveat_frequency_range": (
+        "Frequency ranges differ, so density is compared within each range."
+    ),
+    "caveat_bins": "FFT bin counts differ; bin-level comparison is not direct.",
+    "caveat_threshold": "Occupancy thresholds differ; occupancy_percent may shift.",
+    "caveat_window": "FFT windows differ; peak values and leakage may differ.",
+    "caveat_missing_bins": (
+        "One of the snapshots has no bin-level rows; AI can only use summary data."
+    ),
+}
+
+
+_UK_MESSAGES = {
+    "missing_api_key": (
+        "AI аналіз недоступний: додайте OPENAI_API_KEY або AI_API_KEY у backend/.env."
+    ),
+    "timeout": (
+        "AI аналіз недоступний: запит до AI API перевищив час очікування. "
+        "Потрібен стабільний інтернет."
+    ),
+    "auth_detail": "перевірте OPENAI_API_KEY або AI_API_KEY.",
+    "not_found_detail": "перевірте AI_BASE_URL та AI_MODEL.",
+    "rate_limit_detail": "AI API тимчасово обмежив запити або вичерпано квоту.",
+    "generic_http_detail": "перевірте інтернет, AI_BASE_URL і AI_MODEL.",
+    "http_error": "AI API повернув HTTP {status_code}: {detail}",
+    "transport": "AI аналіз недоступний: немає з'єднання з AI API. Потрібен інтернет.",
+    "empty_response": "AI API відповів без тексту пояснення.",
+    "baseline_name": "База",
+    "comparison_name": "Порівняння",
+    "density_definition": (
+        "Щільнішим вважай сигнал із більшою часткою FFT bins вище "
+        "noise floor + occupancy threshold. Якщо різниця зайнятості мала, "
+        "додатково враховуй occupied bandwidth, mean density та integrated power."
+    ),
+    "direction_higher": "вища",
+    "direction_lower": "нижча",
+    "numeric_basis": (
+        "{winner_name} щільніший за метрикою '{label}': delta comparison-baseline = "
+        "{delta} {unit}, тобто у snapshot 'Порівняння' ця метрика {direction}."
+    ),
+    "tie_winner_name": "приблизно однаково",
+    "tie_numeric_basis": (
+        "Різниця у зайнятості, occupied bandwidth, mean density та integrated power "
+        "менша за практичні пороги для впевненого висновку."
+    ),
+    "caveat_frequency_range": (
+        "Діапазони частот різні, тому щільність порівнюється всередині кожного діапазону."
+    ),
+    "caveat_bins": "Кількість FFT bins різна; bin-level порівняння не є прямим.",
+    "caveat_threshold": "Поріг зайнятості різний; occupancy_percent може зміщуватися.",
+    "caveat_window": "FFT window різний; peak та leakage можуть відрізнятися.",
+    "caveat_missing_bins": (
+        "Для одного зі snapshot-ів немає bin-level rows; AI бачить тільки summary."
+    ),
+}
 
 
 def _extract_chat_message(response_payload: dict[str, Any]) -> str:

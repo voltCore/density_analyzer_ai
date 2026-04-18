@@ -46,7 +46,7 @@ type HelpSection = {
 };
 
 export default function App() {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatusResponse | null>(null);
   const [form, setForm] = useState<DensityRequest>(initialRequest);
@@ -286,6 +286,7 @@ export default function App() {
       const explanation = await explainComparison({
         baseline_name: baseline.name,
         comparison_name: comparison.name,
+        response_language: i18n.resolvedLanguage === "uk" ? "uk" : "en",
         baseline: baseline.result,
         comparison: comparison.result,
       });

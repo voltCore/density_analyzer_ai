@@ -34,10 +34,12 @@ def test_build_comparison_context_identifies_denser_comparison() -> None:
 
     context = build_comparison_context(payload)
 
+    assert context["response_language"] == "en"
     assert context["comparison_quality"] == "direct"
     assert context["local_assessment"]["winner"] == "comparison"
     assert context["local_assessment"]["winner_name"] == "Signal B"
     assert context["local_assessment"]["primary_metric"] == "occupancy_percent"
+    assert "is denser" in context["local_assessment"]["numeric_basis"]
     assert context["deltas_comparison_minus_baseline"]["occupancy_percent_points"] == 7.5
 
 
@@ -58,6 +60,30 @@ def test_build_comparison_context_marks_caution_for_nonmatching_capture() -> Non
     context = build_comparison_context(payload)
 
     assert context["comparison_quality"] == "caution"
+    assert any("Frequency ranges differ" in caveat for caveat in context["caveats"])
+    assert any("FFT bin counts differ" in caveat for caveat in context["caveats"])
+    assert any("no bin-level rows" in caveat for caveat in context["caveats"])
+
+
+def test_build_comparison_context_uses_ukrainian_when_requested() -> None:
+    payload = AIComparisonRequest(
+        baseline_name="Signal A",
+        comparison_name="Signal B",
+        response_language="uk",
+        baseline=_density_response(occupancy_percent=12.5, occupied_bins=128),
+        comparison=_density_response(
+            frequency_to_hz=760_000_000,
+            bins_count=2048,
+            occupancy_percent=20.0,
+            occupied_bins=410,
+            include_bins=False,
+        ),
+    )
+
+    context = build_comparison_context(payload)
+
+    assert context["response_language"] == "uk"
+    assert "щільніший" in context["local_assessment"]["numeric_basis"]
     assert any("Діапазони частот різні" in caveat for caveat in context["caveats"])
     assert any("Кількість FFT bins різна" in caveat for caveat in context["caveats"])
     assert any("немає bin-level rows" in caveat for caveat in context["caveats"])

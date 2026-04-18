@@ -181,6 +181,7 @@ SignalComparisonWinner = Literal["baseline", "comparison", "tie", "unclear"]
 class AIComparisonRequest(BaseModel):
     baseline_name: str | None = Field(default=None, max_length=160)
     comparison_name: str | None = Field(default=None, max_length=160)
+    response_language: Literal["en", "uk"] = "en"
     baseline: DensityResponse
     comparison: DensityResponse
 
