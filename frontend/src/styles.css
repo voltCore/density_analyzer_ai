@@ -43,6 +43,29 @@ select {
   gap: 12px;
 }
 
+.language-select {
+  display: flex;
+  min-width: 176px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #cbd5d8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: #52525b;
+  font-size: 0.88rem;
+}
+
+.language-select select {
+  width: auto;
+  min-height: 34px;
+  border-color: #cbd5d8;
+  padding: 5px 8px;
+  color: #18181b;
+  font-weight: 800;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   color: #0f766e;
@@ -619,6 +642,14 @@ tr:hover td {
 
   .help-trigger {
     width: 100%;
+  }
+
+  .language-select {
+    width: 100%;
+  }
+
+  .language-select select {
+    flex: 1;
   }
 
   .workspace {

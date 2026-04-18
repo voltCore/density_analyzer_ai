@@ -32,6 +32,8 @@ backend/   FastAPI, uv, Ruff, ty, pytest, numpy FFT/bin logic
 frontend/  Vite + React + TypeScript, input form, numerical tables, help modal
 ```
 
+The frontend uses `i18next` and `react-i18next` for localization. English is the default language, and Ukrainian can be selected from the language switcher in the header.
+
 ## Run Backend
 
 ```bash

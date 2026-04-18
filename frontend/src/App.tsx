@@ -1,4 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 
 import {
   calculateDensity,
@@ -21,19 +23,7 @@ import type {
   MeasurementSummary,
   SettingsResponse,
 } from "./types";
-
-const hzFormatter = new Intl.NumberFormat("uk-UA", {
-  maximumFractionDigits: 2,
-});
-
-const dbFormatter = new Intl.NumberFormat("uk-UA", {
-  maximumFractionDigits: 3,
-});
-
-const scientificFormatter = new Intl.NumberFormat("uk-UA", {
-  maximumSignificantDigits: 6,
-  notation: "scientific",
-});
+import i18nInstance, { persistLanguage } from "./i18n";
 
 const initialRequest: DensityRequest = {
   frequency_from_hz: 2_400_000_000,
@@ -47,260 +37,16 @@ const initialRequest: DensityRequest = {
   window: "hann",
 };
 
-const helpSections = [
-  {
-    title: "Поля розрахунку",
-    items: [
-      {
-        term: "Частота з, Hz",
-        description:
-          "Початок частотного діапазону. Звідси backend починає збір і розрахунок щільності сигналу.",
-      },
-      {
-        term: "Частота по, Hz",
-        description:
-          "Кінець діапазону. Різниця між кінцевою та початковою частотою утворює span виміру.",
-      },
-      {
-        term: "Bins",
-        description:
-          "Кількість клітинок частотної сітки. Кожен bin відповідає маленькій частині діапазону, для якої рахується щільність і потужність.",
-      },
-      {
-        term: "Час IQ, sec",
-        description:
-          "Скільки секунд збирати IQ-дані. Більший час дає більше семплів і стабільнішу оцінку, але розрахунок триває довше.",
-      },
-      {
-        term: "Reference level, dBm",
-        description:
-          "Опційний рівень опори для приймача Aaronia. Він допомагає приладу вибрати коректний рівень тракту, але не перетворює результат у калібрований dBm/Hz без калібрування всього тракту.",
-      },
-      {
-        term: "Поріг зайнятості, dB",
-        description:
-          "На скільки dB щільність у bin має бути вищою за noise floor, щоб цей bin вважався зайнятим сигналом.",
-      },
-      {
-        term: "Window",
-        description:
-          "Вікно FFT. Hann зменшує витік спектра між сусідніми bins, Rectangular залишає сире вікно без згладжування.",
-      },
-      {
-        term: "Передавати налаштування на Aaronia",
-        description:
-          "Коли увімкнено, backend перед розрахунком відправляє діапазон, центр, span, bins і reference level на прилад.",
-      },
-      {
-        term: "Повернути числові дані по bins",
-        description:
-          "Коли увімкнено, відповідь містить рядок для кожної клітинки частоти. Це потрібно для таблиці, CSV і детального аналізу.",
-      },
-    ],
-  },
-  {
-    title: "Головні показники",
-    items: [
-      {
-        term: "Range density",
-        description:
-          "Відсоток діапазону, де bins перевищили поріг зайнятості. Це головний індикатор, наскільки діапазон заповнений сигналом.",
-      },
-      {
-        term: "Assessment",
-        description:
-          "Словесна оцінка Range density: тихий, рідкий, помірний або щільний. Вона швидко показує стан діапазону без читання всіх чисел.",
-      },
-      {
-        term: "Mean density",
-        description:
-          "Середня спектральна щільність потужності по всьому діапазону. Корисна для порівняння загального рівня шуму або сигналу між вимірами.",
-      },
-      {
-        term: "Peak density",
-        description:
-          "Найвища спектральна щільність серед усіх bins. Показує найсильнішу ділянку в обраному діапазоні.",
-      },
-      {
-        term: "Peak frequency",
-        description:
-          "Частота bin, де знайдено Peak density. Допомагає швидко знайти, де саме знаходиться найсильніший сигнал.",
-      },
-      {
-        term: "Integrated power",
-        description:
-          "Сумарна потужність по всьому діапазону: density множиться на ширину bin і підсумовується. Це загальна енергія в обраному span.",
-      },
-      {
-        term: "Bin width",
-        description:
-          "Ширина однієї частотної клітинки: span поділений на bins. Менша ширина дає детальнішу сітку.",
-      },
-    ],
-  },
-  {
-    title: "Оцінка щільності діапазону",
-    items: [
-      {
-        term: "Noise floor",
-        description:
-          "Локальна базова щільність шуму, взята як медіана PSD по bins. Від неї система рахує поріг зайнятості.",
-      },
-      {
-        term: "Threshold",
-        description:
-          "Noise floor плюс Поріг зайнятості. Bins вище цього рівня вважаються зайнятими.",
-      },
-      {
-        term: "Occupied bins",
-        description:
-          "Скільки bins перевищили Threshold. Наприклад, 300 / 1024 означає, що 300 клітинок частоти були зайняті.",
-      },
-      {
-        term: "Occupied bandwidth",
-        description:
-          "Оцінена ширина зайнятої смуги: Occupied bins множиться на Bin width.",
-      },
-      {
-        term: "Peak over floor",
-        description:
-          "Наскільки найсильніший bin вищий за noise floor. Велике значення означає виразний пік сигналу.",
-      },
-      {
-        term: "Mean excess",
-        description:
-          "Середнє перевищення зайнятих bins над Threshold. Показує, наскільки впевнено зайняті клітинки виходять за поріг.",
-      },
-    ],
-  },
-  {
-    title: "Клітинки таблиці bins",
-    items: [
-      {
-        term: "#",
-        description:
-          "Порядковий номер bin у частотній сітці. Це індекс клітинки, а не частота.",
-      },
-      {
-        term: "Frequency, Hz",
-        description:
-          "Центральна частота конкретного bin. За нею можна знайти, де саме в спектрі лежить значення.",
-      },
-      {
-        term: "Density",
-        description:
-          "Лінійне значення спектральної щільності потужності для bin. Якщо IQ має unit=volt, одиниця буде V^2/Hz; інакше normalized unit^2/Hz.",
-      },
-      {
-        term: "Density, dB/Hz",
-        description:
-          "Те саме значення Density у логарифмічній dB-шкалі. Так легше порівнювати слабкі й сильні сигнали.",
-      },
-      {
-        term: "Power",
-        description:
-          "Потужність у конкретному bin: Density множиться на ширину bin.",
-      },
-      {
-        term: "Power, dB",
-        description:
-          "Power у dB-шкалі. Це зручно для порівняння окремих частотних клітинок.",
-      },
-    ],
-  },
-  {
-    title: "Налаштування Aaronia і stream",
-    items: [
-      {
-        term: "Start / End",
-        description:
-          "Поточні межі діапазону, які backend бачить у stream header або відправляє на прилад.",
-      },
-      {
-        term: "Center / Span",
-        description:
-          "Центральна частота і повна ширина діапазону. Для приладу це альтернативний спосіб задати ті самі межі Start / End.",
-      },
-      {
-        term: "RBW з FFT size / RBW / bin",
-        description:
-          "Оцінка частотної роздільної здатності. У цьому проєкті вона відповідає ширині однієї FFT-клітинки.",
-      },
-      {
-        term: "Sample frequency / Sample rate",
-        description:
-          "Частота дискретизації IQ-потоку. Вона визначає, скільки IQ-семплів приходить за секунду.",
-      },
-      {
-        term: "Samples/packet",
-        description:
-          "Скільки IQ-семплів приходить в одному пакеті stream. Це допоміжна діагностика потоку.",
-      },
-      {
-        term: "Payload / Unit",
-        description:
-          "Payload описує формат IQ-даних, Unit показує одиницю семплів. Unit важливий для правильного підпису Density.",
-      },
-      {
-        term: "Remote config",
-        description:
-          "Поточні значення конфігурації, які backend читає з RTSA remote API: reference level, FFT size, window, clock та інші параметри.",
-      },
-    ],
-  },
-  {
-    title: "Експорт, snapshot і порівняння",
-    items: [
-      {
-        term: "Snapshot",
-        description:
-          "Збережений вимір із summary, оцінкою діапазону, bins і статусом приладу. Snapshot потрібен для повторного аналізу та порівняння.",
-      },
-      {
-        term: "База",
-        description:
-          "Вимір, який береться як початкова точка порівняння. У таблиці delta рахується від нього.",
-      },
-      {
-        term: "Порівняти з",
-        description:
-          "Другий вимір. Його значення порівнюються з базою, щоб побачити, що стало щільніше, слабше або зсунулось по частоті.",
-      },
-      {
-        term: "Δ",
-        description:
-          "Різниця між другим виміром і базою. Додатне число означає, що показник у другому snapshot більший.",
-      },
-      {
-        term: "Export JSON",
-        description:
-          "Повний експорт виміру. Його можна імпортувати назад у застосунок без втрати деталей.",
-      },
-      {
-        term: "Export CSV",
-        description:
-          "Табличний експорт для Excel, LibreOffice або Python. Містить summary, оцінку діапазону і rows по bins, якщо bins були повернуті.",
-      },
-      {
-        term: "Як зробити CSV файл",
-        description:
-          "CSV має бути plain text у кодуванні UTF-8 з комою як роздільником. Перший рядок - назви колонок: record_type, name, value, unit, index, frequency_hz, density_linear, density_db_per_hz, power_linear, power_db. Для summary-рядків ставте record_type capture, range або summary і заповнюйте name, value, unit. Для частотних клітинок ставте record_type bin і заповнюйте index, frequency_hz, density_linear, density_db_per_hz, power_linear, power_db.",
-      },
-      {
-        term: "CSV і імпорт",
-        description:
-          "У цьому інтерфейсі кнопка Імпорт JSON приймає повний JSON snapshot, бо тільки JSON зберігає всі дані для порівняння без втрат. CSV використовуйте як табличний файл для аналізу або передачі чисел; щоб повернути вимір назад у застосунок, експортуйте й імпортуйте JSON.",
-      },
-      {
-        term: "AI пояснення",
-        description:
-          "Опційний текстовий висновок по двох snapshot-ах. Він не замінює числову таблицю, а пояснює її людською мовою.",
-      },
-    ],
-  },
-] as const;
+type HelpSection = {
+  title: string;
+  items: Array<{
+    term: string;
+    description: string;
+  }>;
+};
 
 export default function App() {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatusResponse | null>(null);
   const [form, setForm] = useState<DensityRequest>(initialRequest);
@@ -332,7 +78,7 @@ export default function App() {
         }));
       })
       .catch((requestError: unknown) => {
-        setError(requestError instanceof Error ? requestError.message : "Backend недоступний");
+        setError(requestError instanceof Error ? requestError.message : t("errors.backendUnavailable"));
       });
     refreshDeviceStatus();
     void refreshMeasurements();
@@ -382,7 +128,7 @@ export default function App() {
     setError(null);
 
     if (!rangeIsValid) {
-      setError("Кінцева частота має бути більшою за початкову, bins >= 16.");
+      setError(t("form.invalidRange"));
       return;
     }
 
@@ -398,7 +144,7 @@ export default function App() {
       setResult(data);
       void refreshDeviceStatus();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Не вдалося отримати дані");
+      setError(requestError instanceof Error ? requestError.message : t("errors.dataFetchFailed"));
     } finally {
       setLoading(false);
     }
@@ -419,7 +165,7 @@ export default function App() {
       setMeasurements(data);
     } catch (requestError) {
       setStorageNotice(
-        requestError instanceof Error ? requestError.message : "Не вдалося прочитати БД.",
+        requestError instanceof Error ? requestError.message : t("errors.readDbFailed"),
       );
     }
   }
@@ -438,7 +184,7 @@ export default function App() {
     } catch (requestError) {
       setter(null);
       setStorageNotice(
-        requestError instanceof Error ? requestError.message : "Не вдалося прочитати snapshot.",
+        requestError instanceof Error ? requestError.message : t("errors.readSnapshotFailed"),
       );
     }
   }
@@ -480,10 +226,10 @@ export default function App() {
       setBaselineId((current) => current || saved.id);
       setComparisonId(saved.id);
       setComparison(saved);
-      setStorageNotice("Snapshot збережено в БД для порівняння.");
+      setStorageNotice(t("notices.savedSnapshot"));
     } catch (requestError) {
       setStorageNotice(
-        requestError instanceof Error ? requestError.message : "Не вдалося зберегти snapshot.",
+        requestError instanceof Error ? requestError.message : t("errors.saveSnapshotFailed"),
       );
     }
   }
@@ -500,7 +246,7 @@ export default function App() {
       }
     } catch (requestError) {
       setStorageNotice(
-        requestError instanceof Error ? requestError.message : "Не вдалося видалити snapshot.",
+        requestError instanceof Error ? requestError.message : t("errors.deleteSnapshotFailed"),
       );
     }
   }
@@ -518,10 +264,10 @@ export default function App() {
       await refreshMeasurements();
       setComparisonId(saved.id);
       setComparison(saved);
-      setStorageNotice("JSON snapshot імпортовано в БД для порівняння.");
+      setStorageNotice(t("notices.importedSnapshot"));
     } catch (importError) {
       setStorageNotice(
-        importError instanceof Error ? importError.message : "Не вдалося імпортувати JSON.",
+        importError instanceof Error ? importError.message : t("errors.importFailed"),
       );
     } finally {
       event.target.value = "";
@@ -546,7 +292,7 @@ export default function App() {
       setAiExplanation(explanation);
     } catch (requestError) {
       setAiExplanationError(
-        requestError instanceof Error ? requestError.message : "AI пояснення недоступне.",
+        requestError instanceof Error ? requestError.message : t("errors.aiUnavailable"),
       );
     } finally {
       setAiExplanationLoading(false);
@@ -557,14 +303,15 @@ export default function App() {
     <main className="app-shell">
       <section className="topline">
         <div>
-          <p className="eyebrow">SPECTRAN V6 IQ</p>
-          <h1>Щільність сигналу за діапазоном</h1>
+          <p className="eyebrow">{t("app.eyebrow")}</p>
+          <h1>{t("app.title")}</h1>
         </div>
         <div className="top-actions">
+          <LanguageSwitcher />
           <button
             aria-controls="project-help"
             aria-expanded={helpOpen}
-            aria-label="Відкрити довідку"
+            aria-label={t("app.helpOpenLabel")}
             className="help-trigger"
             type="button"
             onClick={() => setHelpOpen(true)}
@@ -572,7 +319,7 @@ export default function App() {
             ?
           </button>
           <div className="mode-pill">
-            <span>Джерело</span>
+            <span>{t("app.source")}</span>
             <strong>{settings?.source_mode ?? "..."}</strong>
           </div>
         </div>
@@ -583,7 +330,7 @@ export default function App() {
       <section className="workspace">
         <form className="control-surface" onSubmit={handleSubmit}>
           <label>
-            Частота з, Hz
+            {t("form.frequencyFrom")}
             <input
               type="number"
               min="1"
@@ -599,7 +346,7 @@ export default function App() {
           </label>
 
           <label>
-            Частота по, Hz
+            {t("form.frequencyTo")}
             <input
               type="number"
               min="1"
@@ -615,7 +362,7 @@ export default function App() {
           </label>
 
           <label>
-            Bins
+            {t("form.bins")}
             <input
               type="number"
               min="16"
@@ -629,7 +376,7 @@ export default function App() {
           </label>
 
           <label>
-            Час IQ, sec
+            {t("form.captureSeconds")}
             <input
               type="number"
               min="0.01"
@@ -646,11 +393,11 @@ export default function App() {
           </label>
 
           <label>
-            Reference level, dBm
+            {t("form.referenceLevel")}
             <input
               type="number"
               step="1"
-              placeholder="опційно"
+              placeholder={t("form.optional")}
               value={form.reference_level_dbm ?? ""}
               onChange={(event) =>
                 setForm((current) => ({
@@ -663,7 +410,7 @@ export default function App() {
           </label>
 
           <label>
-            Поріг зайнятості, dB
+            {t("form.occupancyThreshold")}
             <input
               type="number"
               min="0.1"
@@ -680,7 +427,7 @@ export default function App() {
           </label>
 
           <label>
-            Window
+            {t("form.window")}
             <select
               value={form.window}
               onChange={(event) =>
@@ -706,7 +453,7 @@ export default function App() {
                 }))
               }
             />
-            Передавати налаштування на Aaronia
+            {t("form.applyToDevice")}
           </label>
 
           <label className="inline-control">
@@ -720,11 +467,11 @@ export default function App() {
                 }))
               }
             />
-            Повернути числові дані по bins
+            {t("form.includeBins")}
           </label>
 
           <button disabled={loading || !rangeIsValid} type="submit">
-            {loading ? "Рахую..." : "Розрахувати"}
+            {loading ? t("form.loading") : t("form.submit")}
           </button>
         </form>
 
@@ -735,27 +482,50 @@ export default function App() {
 
           {!result ? (
             <div className="empty-state">
-              <strong>Готово до розрахунку.</strong>
-              <span>Введіть діапазон частот і кількість bins.</span>
+              <strong>{t("status.readyTitle")}</strong>
+              <span>{t("status.readyText")}</span>
             </div>
           ) : (
             <>
               <div className="status-row">
-                <span>Пристрій налаштовано: {result.configured_device ? "так" : "ні"}</span>
-                <span>Packets: {result.metadata.packet_count ?? 0}</span>
+                <span>
+                  {t("status.deviceConfigured")}:{" "}
+                  {result.configured_device ? t("status.yes") : t("status.no")}
+                </span>
+                <span>
+                  {t("status.packets")}: {result.metadata.packet_count ?? 0}
+                </span>
               </div>
 
               <div className="metrics-grid">
                 <Metric
-                  label="Range density"
-                  value={`${dbFormatter.format(result.range_assessment.occupancy_percent)}%`}
+                  label={t("metrics.rangeDensity")}
+                  value={`${formatCompactNumber(result.range_assessment.occupancy_percent)}%`}
                 />
-                <Metric label="Assessment" value={assessmentLabel(result.range_assessment.label)} />
-                <Metric label="Mean density" value={formatDb(result.summary.mean_density_db_per_hz)} />
-                <Metric label="Peak density" value={formatDb(result.summary.peak_density_db_per_hz)} />
-                <Metric label="Peak frequency" value={`${formatHz(result.summary.peak_frequency_hz)} Hz`} />
-                <Metric label="Integrated power" value={formatDb(result.summary.integrated_power_db)} />
-                <Metric label="Bin width" value={`${formatHz(result.summary.bin_width_hz)} Hz`} />
+                <Metric
+                  label={t("metrics.assessment")}
+                  value={assessmentLabel(result.range_assessment.label, t)}
+                />
+                <Metric
+                  label={t("metrics.meanDensity")}
+                  value={formatDb(result.summary.mean_density_db_per_hz)}
+                />
+                <Metric
+                  label={t("metrics.peakDensity")}
+                  value={formatDb(result.summary.peak_density_db_per_hz)}
+                />
+                <Metric
+                  label={t("metrics.peakFrequency")}
+                  value={`${formatHz(result.summary.peak_frequency_hz)} Hz`}
+                />
+                <Metric
+                  label={t("metrics.integratedPower")}
+                  value={formatDb(result.summary.integrated_power_db)}
+                />
+                <Metric
+                  label={t("metrics.binWidth")}
+                  value={`${formatHz(result.summary.bin_width_hz)} Hz`}
+                />
               </div>
 
               <RangeAssessmentPanel result={result} />
@@ -786,8 +556,8 @@ export default function App() {
               />
 
               <div className="unit-line">
-                Density: {result.summary.density_unit}; power: {result.summary.power_unit}; samples:{" "}
-                {result.summary.sample_count}
+                {t("status.density")}: {result.summary.density_unit}; {t("status.power")}:{" "}
+                {result.summary.power_unit}; {t("status.samples")}: {result.summary.sample_count}
               </div>
 
               {result.bins.length > 0 ? (
@@ -796,11 +566,11 @@ export default function App() {
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Frequency, Hz</th>
-                        <th>Density</th>
-                        <th>Density, dB/Hz</th>
-                        <th>Power</th>
-                        <th>Power, dB</th>
+                        <th>{t("table.frequencyHz")}</th>
+                        <th>{t("table.density")}</th>
+                        <th>{t("table.densityDbHz")}</th>
+                        <th>{t("table.power")}</th>
+                        <th>{t("table.powerDb")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -808,10 +578,10 @@ export default function App() {
                         <tr key={bin.index}>
                           <td>{bin.index}</td>
                           <td>{formatHz(bin.frequency_hz)}</td>
-                          <td>{scientificFormatter.format(bin.density_linear)}</td>
-                          <td>{dbFormatter.format(bin.density_db_per_hz)}</td>
-                          <td>{scientificFormatter.format(bin.power_linear)}</td>
-                          <td>{dbFormatter.format(bin.power_db)}</td>
+                          <td>{formatScientific(bin.density_linear)}</td>
+                          <td>{formatCompactNumber(bin.density_db_per_hz)}</td>
+                          <td>{formatScientific(bin.power_linear)}</td>
+                          <td>{formatCompactNumber(bin.power_db)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -826,7 +596,32 @@ export default function App() {
   );
 }
 
+function LanguageSwitcher() {
+  const { i18n, t } = useTranslation();
+  const language = i18n.resolvedLanguage ?? i18n.language;
+
+  async function handleLanguageChange(event: ChangeEvent<HTMLSelectElement>) {
+    const nextLanguage = event.target.value;
+    await i18n.changeLanguage(nextLanguage);
+    persistLanguage(nextLanguage);
+  }
+
+  return (
+    <label className="language-select">
+      <span>{t("app.language")}</span>
+      <select value={language} onChange={handleLanguageChange}>
+        <option value="en">{t("language.english")}</option>
+        <option value="uk">{t("language.ukrainian")}</option>
+      </select>
+    </label>
+  );
+}
+
 function HelpDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  const intro = t("help.intro", { returnObjects: true }) as string[];
+  const helpSections = t("help.sections", { returnObjects: true }) as HelpSection[];
+
   return (
     <div
       className="help-backdrop"
@@ -845,26 +640,19 @@ function HelpDialog({ onClose }: { onClose: () => void }) {
       >
         <div className="help-header">
           <div>
-            <p className="eyebrow">Довідка</p>
-            <h2 id="project-help-title">Що вимірює проєкт</h2>
+            <p className="eyebrow">{t("help.eyebrow")}</p>
+            <h2 id="project-help-title">{t("help.title")}</h2>
           </div>
           <button className="help-close" type="button" onClick={onClose}>
-            Закрити
+            {t("help.close")}
           </button>
         </div>
 
         <div className="help-body">
           <div className="help-intro">
-            <p>
-              Spectrana Density вимірює, як енергія сигналу розподілена всередині обраного
-              частотного діапазону. Backend бере IQ-дані, розбиває діапазон на bins, рахує FFT і
-              спектральну щільність потужності для кожної частотної клітинки.
-            </p>
-            <p>
-              Головний практичний результат - Range density: яка частина діапазону має щільність
-              вище локального noise floor на заданий поріг. Без калібрування всього тракту ці числа
-              слід читати як стабільну оцінку для порівняння вимірів, а не як абсолютний dBm/Hz.
-            </p>
+            {intro.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
           </div>
 
           {helpSections.map((section) => (
@@ -905,41 +693,37 @@ function ExportPanel({
   onSaveSnapshot: () => void;
   onImportJson: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <section className="settings-panel compact">
-      <h2>Експорт і збереження</h2>
+      <h2>{t("exportPanel.title")}</h2>
       <label>
-        Назва snapshot
+        {t("exportPanel.snapshotName")}
         <input
-          placeholder="наприклад: antenna A, 745 MHz, before filter"
+          placeholder={t("exportPanel.placeholder")}
           value={measurementName}
           onChange={(event) => onNameChange(event.target.value)}
         />
       </label>
       <div className="action-row">
         <button type="button" onClick={onSaveSnapshot}>
-          Зберегти snapshot
+          {t("exportPanel.save")}
         </button>
         <button type="button" onClick={onExportJson}>
-          Export JSON
+          {t("exportPanel.exportJson")}
         </button>
         <button type="button" onClick={onExportCsv}>
-          Export CSV
+          {t("exportPanel.exportCsv")}
         </button>
         <label className="file-button">
-          Імпорт JSON
+          {t("exportPanel.importJson")}
           <input accept="application/json,.json" type="file" onChange={onImportJson} />
         </label>
       </div>
-      <p className="helper-text">
-        JSON зберігає повний результат. CSV містить summary, оцінку діапазону і bins для
-        табличного порівняння.
-      </p>
+      <p className="helper-text">{t("exportPanel.helper")}</p>
       {result.bins.length === 0 ? (
-        <p className="helper-text">
-          У цьому результаті немає rows по bins. Увімкніть “Повернути числові дані по bins” перед
-          наступним розрахунком, якщо потрібен bin-level CSV.
-        </p>
+        <p className="helper-text">{t("exportPanel.noBins")}</p>
       ) : null}
       {storageNotice ? <p className="helper-text strong">{storageNotice}</p> : null}
     </section>
@@ -973,18 +757,20 @@ function ComparisonPanel({
   onDeleteSnapshot: (id: string) => void;
   onExplainComparison: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <section className="settings-panel compact">
-      <h2>Порівняння snapshot-ів</h2>
+      <h2>{t("comparison.title")}</h2>
       {measurements.length === 0 ? (
-        <p className="helper-text">Збережіть перший snapshot у БД після розрахунку.</p>
+        <p className="helper-text">{t("comparison.empty")}</p>
       ) : (
         <>
           <div className="compare-controls">
             <label>
-              База
+              {t("comparison.baseline")}
               <select value={baselineId} onChange={(event) => onBaselineChange(event.target.value)}>
-                <option value="">оберіть snapshot</option>
+                <option value="">{t("comparison.chooseSnapshot")}</option>
                 {measurements.map((measurement) => (
                   <option key={measurement.id} value={measurement.id}>
                     {measurement.name}
@@ -993,12 +779,12 @@ function ComparisonPanel({
               </select>
             </label>
             <label>
-              Порівняти з
+              {t("comparison.compareWith")}
               <select
                 value={comparisonId}
                 onChange={(event) => onComparisonChange(event.target.value)}
               >
-                <option value="">оберіть snapshot</option>
+                <option value="">{t("comparison.chooseSnapshot")}</option>
                 {measurements.map((measurement) => (
                   <option key={measurement.id} value={measurement.id}>
                     {measurement.name}
@@ -1019,7 +805,7 @@ function ComparisonPanel({
               />
             </>
           ) : (
-            <p className="helper-text">Оберіть два snapshot-и для числового порівняння.</p>
+            <p className="helper-text">{t("comparison.selectTwo")}</p>
           )}
 
           <div className="snapshot-list">
@@ -1029,13 +815,13 @@ function ComparisonPanel({
                   <strong>{measurement.name}</strong>
                   <span>
                     {formatDateTime(measurement.created_at)} · {formatHz(measurement.frequency_from_hz)}-
-                    {formatHz(measurement.frequency_to_hz)} Hz · density{" "}
-                    {dbFormatter.format(measurement.occupancy_percent)}% · bins:{" "}
+                    {formatHz(measurement.frequency_to_hz)} Hz · {t("comparison.density")}{" "}
+                    {formatCompactNumber(measurement.occupancy_percent)}% · {t("comparison.bins")}:{" "}
                     {measurement.bins_count}
                   </span>
                 </div>
                 <button type="button" onClick={() => onDeleteSnapshot(measurement.id)}>
-                  Видалити
+                  {t("comparison.delete")}
                 </button>
               </div>
             ))}
@@ -1057,23 +843,25 @@ function AIComparisonPanel({
   loading: boolean;
   onExplain: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="ai-explanation">
       <div className="ai-explanation-header">
-        <h3>AI пояснення</h3>
+        <h3>{t("ai.title")}</h3>
         <button disabled={loading} type="button" onClick={onExplain}>
-          {loading ? "AI аналізує..." : "Пояснити через AI"}
+          {loading ? t("ai.loading") : t("ai.button")}
         </button>
       </div>
-      <p className="helper-text">Потрібен backend API key та інтернет-з'єднання.</p>
+      <p className="helper-text">{t("ai.helper")}</p>
       {error ? <p className="ai-error">{error}</p> : null}
       {explanation ? (
         <div className="ai-result">
           <p>
-            <strong>Висновок:</strong> {comparisonWinnerLabel(explanation)}
+            <strong>{t("ai.conclusion")}</strong> {comparisonWinnerLabel(explanation, t)}
           </p>
           <p>
-            <strong>Числова база:</strong> {explanation.numeric_basis}
+            <strong>{t("ai.numericBasis")}</strong> {explanation.numeric_basis}
           </p>
           {explanation.caveats.length > 0 ? (
             <ul className="ai-caveats">
@@ -1096,41 +884,42 @@ function ComparisonMetrics({
   baseline: MeasurementStored;
   comparison: MeasurementStored;
 }) {
+  const { t } = useTranslation();
   const base = baseline.result;
   const next = comparison.result;
   const rows = [
     {
-      label: "Range density",
-      base: `${dbFormatter.format(base.range_assessment.occupancy_percent)}%`,
-      next: `${dbFormatter.format(next.range_assessment.occupancy_percent)}%`,
+      label: t("metrics.rangeDensity"),
+      base: `${formatCompactNumber(base.range_assessment.occupancy_percent)}%`,
+      next: `${formatCompactNumber(next.range_assessment.occupancy_percent)}%`,
       delta: `${signed(next.range_assessment.occupancy_percent - base.range_assessment.occupancy_percent)} pp`,
     },
     {
-      label: "Occupied bandwidth",
+      label: t("comparison.occupiedBandwidth"),
       base: `${formatHz(base.range_assessment.occupied_bandwidth_hz)} Hz`,
       next: `${formatHz(next.range_assessment.occupied_bandwidth_hz)} Hz`,
       delta: `${signed(next.range_assessment.occupied_bandwidth_hz - base.range_assessment.occupied_bandwidth_hz)} Hz`,
     },
     {
-      label: "Mean density",
+      label: t("metrics.meanDensity"),
       base: formatDb(base.summary.mean_density_db_per_hz),
       next: formatDb(next.summary.mean_density_db_per_hz),
       delta: `${signed(next.summary.mean_density_db_per_hz - base.summary.mean_density_db_per_hz)} dB`,
     },
     {
-      label: "Peak density",
+      label: t("metrics.peakDensity"),
       base: formatDb(base.summary.peak_density_db_per_hz),
       next: formatDb(next.summary.peak_density_db_per_hz),
       delta: `${signed(next.summary.peak_density_db_per_hz - base.summary.peak_density_db_per_hz)} dB`,
     },
     {
-      label: "Integrated power",
+      label: t("metrics.integratedPower"),
       base: formatDb(base.summary.integrated_power_db),
       next: formatDb(next.summary.integrated_power_db),
       delta: `${signed(next.summary.integrated_power_db - base.summary.integrated_power_db)} dB`,
     },
     {
-      label: "Peak frequency",
+      label: t("metrics.peakFrequency"),
       base: `${formatHz(base.summary.peak_frequency_hz)} Hz`,
       next: `${formatHz(next.summary.peak_frequency_hz)} Hz`,
       delta: `${signed(next.summary.peak_frequency_hz - base.summary.peak_frequency_hz)} Hz`,
@@ -1142,10 +931,10 @@ function ComparisonMetrics({
       <table>
         <thead>
           <tr>
-            <th>Metric</th>
-            <th>База</th>
-            <th>Порівняння</th>
-            <th>Δ</th>
+            <th>{t("comparison.metric")}</th>
+            <th>{t("comparison.base")}</th>
+            <th>{t("comparison.comparison")}</th>
+            <th>{t("comparison.delta")}</th>
           </tr>
         </thead>
         <tbody>
@@ -1164,36 +953,53 @@ function ComparisonMetrics({
 }
 
 function RangeAssessmentPanel({ result }: { result: DensityResponse }) {
+  const { t } = useTranslation();
   const assessment = result.range_assessment;
   return (
     <section className="settings-panel compact">
-      <h2>Оцінка щільності діапазону</h2>
+      <h2>{t("range.title")}</h2>
       <div className="assessment-line">
-        <strong>{assessmentLabel(assessment.label)}</strong>
+        <strong>{assessmentLabel(assessment.label, t)}</strong>
         <span>
-          {dbFormatter.format(assessment.occupancy_percent)}% діапазону вище noise floor на{" "}
-          {dbFormatter.format(assessment.threshold_offset_db)} dB
+          {t("range.line", {
+            percent: formatCompactNumber(assessment.occupancy_percent),
+            threshold: formatCompactNumber(assessment.threshold_offset_db),
+          })}
         </span>
       </div>
       <div className="settings-grid">
-        <InfoItem label="Noise floor" value={formatDb(assessment.noise_floor_db_per_hz)} />
-        <InfoItem label="Threshold" value={formatDb(assessment.threshold_db_per_hz)} />
-        <InfoItem label="Occupied bins" value={`${assessment.occupied_bins} / ${result.summary.bin_count}`} />
-        <InfoItem label="Occupied bandwidth" value={`${formatHz(assessment.occupied_bandwidth_hz)} Hz`} />
-        <InfoItem label="Peak over floor" value={`${dbFormatter.format(assessment.peak_to_floor_db)} dB`} />
-        <InfoItem label="Mean excess" value={`${dbFormatter.format(assessment.mean_excess_db)} dB`} />
+        <InfoItem label={t("range.noiseFloor")} value={formatDb(assessment.noise_floor_db_per_hz)} />
+        <InfoItem label={t("range.threshold")} value={formatDb(assessment.threshold_db_per_hz)} />
+        <InfoItem
+          label={t("range.occupiedBins")}
+          value={`${assessment.occupied_bins} / ${result.summary.bin_count}`}
+        />
+        <InfoItem
+          label={t("range.occupiedBandwidth")}
+          value={`${formatHz(assessment.occupied_bandwidth_hz)} Hz`}
+        />
+        <InfoItem
+          label={t("range.peakOverFloor")}
+          value={`${formatCompactNumber(assessment.peak_to_floor_db)} dB`}
+        />
+        <InfoItem
+          label={t("range.meanExcess")}
+          value={`${formatCompactNumber(assessment.mean_excess_db)} dB`}
+        />
       </div>
     </section>
   );
 }
 
 function DeviceStatusPanel({ status }: { status: DeviceStatusResponse | null }) {
+  const { t } = useTranslation();
+
   if (!status) {
     return (
       <section className="settings-panel">
-        <h2>Налаштування Aaronia</h2>
+        <h2>{t("device.title")}</h2>
         <div className="settings-grid">
-          <InfoItem label="Status" value="чекаю backend" />
+          <InfoItem label="Status" value={t("device.waitingBackend")} />
         </div>
       </section>
     );
@@ -1201,14 +1007,14 @@ function DeviceStatusPanel({ status }: { status: DeviceStatusResponse | null }) 
 
   const stream = status.stream;
   const currentValues = [
-    ["Start", stream?.frequency_from_hz, "Hz"],
-    ["End", stream?.frequency_to_hz, "Hz"],
-    ["Center", stream?.center_frequency_hz, "Hz"],
-    ["Span", stream?.span_hz, "Hz"],
-    ["RBW з FFT size", stream?.rbw_from_fft_size_hz, "Hz"],
-    ["Sample frequency", stream?.sample_frequency_hz, "Hz"],
-    ["Samples/packet", stream?.samples_per_packet, null],
-    ["Unit", stream?.unit, null],
+    [t("device.start"), stream?.frequency_from_hz, "Hz"],
+    [t("device.end"), stream?.frequency_to_hz, "Hz"],
+    [t("device.center"), stream?.center_frequency_hz, "Hz"],
+    [t("device.span"), stream?.span_hz, "Hz"],
+    [t("device.rbwFromFft"), stream?.rbw_from_fft_size_hz, "Hz"],
+    [t("device.sampleFrequency"), stream?.sample_frequency_hz, "Hz"],
+    [t("device.samplesPerPacket"), stream?.samples_per_packet, null],
+    [t("device.unit"), stream?.unit, null],
   ] as const;
 
   const remoteSettings = [
@@ -1225,27 +1031,27 @@ function DeviceStatusPanel({ status }: { status: DeviceStatusResponse | null }) 
   return (
     <section className="settings-panel">
       <div className="panel-title-row">
-        <h2>Налаштування Aaronia</h2>
+        <h2>{t("device.title")}</h2>
         <span className={status.reachable ? "ok-chip" : "bad-chip"}>
-          {status.reachable ? status.health_state ?? "online" : "offline"}
+          {status.reachable ? status.health_state ?? t("device.online") : t("device.offline")}
         </span>
       </div>
 
       <div className="settings-grid">
-        <InfoItem label="Mission" value={status.info.mission ?? "невідомо"} />
-        <InfoItem label="Input" value={status.inputs.join(", ") || "main"} />
-        <InfoItem label="Payload" value={stream?.payload ?? "невідомо"} />
-        <InfoItem label="Control" value={status.endpoints.control ?? "mock"} />
+        <InfoItem label={t("device.mission")} value={status.info.mission ?? t("device.unknown")} />
+        <InfoItem label={t("device.input")} value={status.inputs.join(", ") || t("device.mainInput")} />
+        <InfoItem label={t("device.payload")} value={stream?.payload ?? t("device.unknown")} />
+        <InfoItem label={t("device.control")} value={status.endpoints.control ?? "mock"} />
       </div>
 
-      <h3>Поточний stream header</h3>
+      <h3>{t("device.currentStreamHeader")}</h3>
       <div className="settings-grid">
         {currentValues.map(([label, value, unit]) => (
           <InfoItem key={label} label={label} value={formatMaybeNumber(value, unit)} />
         ))}
       </div>
 
-      <h3>Remote config</h3>
+      <h3>{t("device.remoteConfig")}</h3>
       <div className="settings-grid">
         {remoteSettings.map((key) => {
           const setting = status.settings[key];
@@ -1263,22 +1069,29 @@ function DeviceStatusPanel({ status }: { status: DeviceStatusResponse | null }) 
 }
 
 function CaptureSettingsPanel({ settings }: { settings: CaptureSettings }) {
+  const { t } = useTranslation();
+
   return (
     <section className="settings-panel compact">
-      <h2>Налаштування цього розрахунку</h2>
+      <h2>{t("capture.title")}</h2>
       <div className="settings-grid">
-        <InfoItem label="Start" value={`${formatHz(settings.frequency_from_hz)} Hz`} />
-        <InfoItem label="End" value={`${formatHz(settings.frequency_to_hz)} Hz`} />
-        <InfoItem label="Center" value={`${formatHz(settings.center_frequency_hz)} Hz`} />
-        <InfoItem label="Span" value={`${formatHz(settings.span_hz)} Hz`} />
-        <InfoItem label="RBW / bin" value={`${formatHz(settings.rbw_estimate_hz)} Hz`} />
-        <InfoItem label="Sample rate" value={`${formatHz(settings.sample_rate_hz)} Hz`} />
-        <InfoItem label="Bins" value={settings.bins} />
-        <InfoItem label="Occupancy threshold" value={`${settings.occupancy_threshold_db} dB`} />
+        <InfoItem label={t("device.start")} value={`${formatHz(settings.frequency_from_hz)} Hz`} />
+        <InfoItem label={t("device.end")} value={`${formatHz(settings.frequency_to_hz)} Hz`} />
+        <InfoItem label={t("device.center")} value={`${formatHz(settings.center_frequency_hz)} Hz`} />
+        <InfoItem label={t("device.span")} value={`${formatHz(settings.span_hz)} Hz`} />
+        <InfoItem label={t("capture.rbwBin")} value={`${formatHz(settings.rbw_estimate_hz)} Hz`} />
+        <InfoItem label={t("capture.sampleRate")} value={`${formatHz(settings.sample_rate_hz)} Hz`} />
+        <InfoItem label={t("form.bins")} value={settings.bins} />
         <InfoItem
-          label="Reference"
+          label={t("capture.occupancyThreshold")}
+          value={`${settings.occupancy_threshold_db} dB`}
+        />
+        <InfoItem
+          label={t("capture.reference")}
           value={
-            settings.reference_level_dbm === null ? "не задано" : `${settings.reference_level_dbm} dBm`
+            settings.reference_level_dbm === null
+              ? t("device.notSet")
+              : `${settings.reference_level_dbm} dBm`
           }
         />
       </div>
@@ -1287,10 +1100,12 @@ function CaptureSettingsPanel({ settings }: { settings: CaptureSettings }) {
 }
 
 function InfoItem({ label, value }: { label: string; value: string | number | boolean | null }) {
+  const { t } = useTranslation();
+
   return (
     <div className="info-item">
       <span>{label}</span>
-      <strong>{String(value ?? "немає даних")}</strong>
+      <strong>{String(value ?? t("device.noData"))}</strong>
     </div>
   );
 }
@@ -1304,19 +1119,38 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function currentLocale() {
+  return i18nInstance.resolvedLanguage === "uk" ? "uk-UA" : "en-US";
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat(currentLocale(), {
+    maximumFractionDigits: 3,
+  }).format(value);
+}
+
+function formatScientific(value: number) {
+  return new Intl.NumberFormat(currentLocale(), {
+    maximumSignificantDigits: 6,
+    notation: "scientific",
+  }).format(value);
+}
+
 function formatHz(value: number) {
-  return hzFormatter.format(value);
+  return new Intl.NumberFormat(currentLocale(), {
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function formatDb(value: number) {
-  return `${dbFormatter.format(value)} dB`;
+  return `${formatCompactNumber(value)} dB`;
 }
 
 function formatMaybeNumber(value: string | number | boolean | null | undefined, unit: string | null) {
   if (typeof value === "number") {
-    return unit === "Hz" ? `${formatHz(value)} Hz` : dbFormatter.format(value);
+    return unit === "Hz" ? `${formatHz(value)} Hz` : formatCompactNumber(value);
   }
-  return value ?? "немає даних";
+  return value ?? i18nInstance.t("device.noData");
 }
 
 function formatSettingValue(value: string | number | boolean | null | undefined, unit?: string | null) {
@@ -1324,9 +1158,9 @@ function formatSettingValue(value: string | number | boolean | null | undefined,
     return `${formatHz(value)} Hz`;
   }
   if (typeof value === "number" && unit) {
-    return `${dbFormatter.format(value)} ${unit}`;
+    return `${formatCompactNumber(value)} ${unit}`;
   }
-  return value ?? "немає даних";
+  return value ?? i18nInstance.t("device.noData");
 }
 
 function createExportSnapshot(
@@ -1348,7 +1182,7 @@ function importedMeasurementPayload(parsed: unknown, fileName: string): Measurem
   const maybeResult = isDensityResponse(record.result) ? record.result : parsed;
 
   if (!isDensityResponse(maybeResult)) {
-    throw new Error("JSON не схожий на Spectrana Density export.");
+    throw new Error(i18nInstance.t("errors.invalidExport"));
   }
 
   return {
@@ -1380,7 +1214,7 @@ function automaticSnapshotName(result: DensityResponse, createdAt: string) {
   const startMhz = result.capture_settings.frequency_from_hz / 1_000_000;
   const endMhz = result.capture_settings.frequency_to_hz / 1_000_000;
   const density = result.range_assessment.occupancy_percent;
-  return `${formatDateTime(createdAt)} · ${dbFormatter.format(startMhz)}-${dbFormatter.format(endMhz)} MHz · ${dbFormatter.format(density)}%`;
+  return `${formatDateTime(createdAt)} · ${formatCompactNumber(startMhz)}-${formatCompactNumber(endMhz)} MHz · ${formatCompactNumber(density)}%`;
 }
 
 function exportBaseName(result: DensityResponse) {
@@ -1471,33 +1305,27 @@ function downloadText(fileName: string, mimeType: string, content: string) {
 }
 
 function signed(value: number) {
-  const formatted = dbFormatter.format(value);
+  const formatted = formatCompactNumber(value);
   return value > 0 ? `+${formatted}` : formatted;
 }
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("uk-UA", {
+  return new Intl.DateTimeFormat(currentLocale(), {
     dateStyle: "short",
     timeStyle: "medium",
   }).format(new Date(value));
 }
 
-function assessmentLabel(label: DensityResponse["range_assessment"]["label"]) {
-  const labels = {
-    quiet: "тихий",
-    sparse: "рідкий",
-    moderate: "помірний",
-    dense: "щільний",
-  };
-  return labels[label];
+function assessmentLabel(label: DensityResponse["range_assessment"]["label"], t: TFunction) {
+  return t(`assessment.${label}`);
 }
 
-function comparisonWinnerLabel(explanation: AIComparisonResponse) {
+function comparisonWinnerLabel(explanation: AIComparisonResponse, t: TFunction) {
   if (explanation.winner === "tie") {
-    return "сигнали приблизно однакові за щільністю";
+    return t("ai.tie");
   }
   if (explanation.winner === "unclear") {
-    return "недостатньо даних для точного висновку";
+    return t("ai.unclear");
   }
-  return `${explanation.winner_name} щільніший`;
+  return t("ai.denser", { name: explanation.winner_name });
 }
