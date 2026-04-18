@@ -5,6 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from spectrana_density.schemas import DensityRequest
+from spectrana_density.signal.density import DensityComputation
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,8 @@ class IQCapture:
     unit: str = "normalized"
     packet_count: int = 1
     configured_device: bool = False
+    sample_count: int | None = None
+    density: DensityComputation | None = None
     metadata: dict[str, str | int | float | bool | None] = field(default_factory=dict)
 
 

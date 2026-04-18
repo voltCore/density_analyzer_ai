@@ -1,8 +1,15 @@
+import asyncio
 import json
 
 import numpy as np
 
-from spectrana_density.sources.aaronia import AaroniaStreamParser, iter_frames_from_bytes
+from spectrana_density.config import Settings
+from spectrana_density.schemas import DensityRequest
+from spectrana_density.sources.aaronia import (
+    AaroniaIQSource,
+    AaroniaStreamParser,
+    iter_frames_from_bytes,
+)
 
 
 def test_aaronia_stream_parser_decodes_raw16_iq_frame() -> None:
@@ -39,3 +46,64 @@ def test_aaronia_stream_parser_waits_for_full_payload() -> None:
 
     assert len(frames) == 1
     np.testing.assert_allclose(frames[0].samples, np.array([1 - 1j, 2 - 2j]))
+
+
+def test_aaronia_capture_does_not_stop_at_max_capture_samples(monkeypatch) -> None:
+    bins = 1024
+    chunks = [_raw32_frame(np.ones(bins, dtype=np.complex64) * index) for index in range(1, 4)]
+
+    class FakeStreamResponse:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_bytes(self):
+            for chunk in chunks:
+                yield chunk
+
+    class FakeAsyncClient:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, _method: str, _url: str) -> FakeStreamResponse:
+            return FakeStreamResponse()
+
+    monkeypatch.setattr("spectrana_density.sources.aaronia.httpx.AsyncClient", FakeAsyncClient)
+
+    source = AaroniaIQSource(
+        Settings(
+            aaronia_stream_url="http://example.test/stream?format=raw32",
+            max_capture_samples=bins,
+        )
+    )
+    request = DensityRequest(
+        frequency_from_hz=100_000_000,
+        frequency_to_hz=101_000_000,
+        bins=bins,
+        capture_seconds=30.0,
+        apply_to_device=False,
+    )
+
+    capture = asyncio.run(source._read_capture(request))
+
+    assert capture.packet_count == 3
+    assert capture.sample_count == bins * 3
+
+
+def _raw32_frame(samples: np.ndarray) -> bytes:
+    values = np.empty(samples.size * 2, dtype="<f4")
+    values[0::2] = samples.real
+    values[1::2] = samples.imag
+    header = {"samples": samples.size, "sampleSize": 2, "sampleDepth": 1, "scale": 1}
+    return json.dumps(header).encode("utf-8") + b"\n\x1e" + values.tobytes() + b"\x1e"
