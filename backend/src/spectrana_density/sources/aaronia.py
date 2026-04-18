@@ -16,6 +16,7 @@ from spectrana_density.schemas import (
     DeviceStatusResponse,
     DeviceStreamStatus,
 )
+from spectrana_density.signal.density import DensityComputation, StreamingDensityAccumulator
 from spectrana_density.sources.base import IQCapture
 
 FRAME_SEPARATOR = b"\x1e"
@@ -40,6 +41,18 @@ class IQFrame:
     def unit(self) -> str:
         value = self.header.get("unit")
         return str(value) if value else "normalized"
+
+
+@dataclass(frozen=True)
+class AaroniaStreamCapture:
+    density: DensityComputation
+    sample_count: int
+    packet_count: int
+    first_header: dict[str, Any]
+    frequency_from_hz: float
+    frequency_to_hz: float
+    unit: str
+    elapsed_seconds: float
 
 
 class AaroniaStreamParser:
@@ -118,26 +131,20 @@ class AaroniaIQSource:
             await self._configure_device(request)
             configured_device = True
 
-        frames = await self._read_frames(request)
-        if not frames:
-            msg = "Aaronia stream did not return any IQ frames"
-            raise RuntimeError(msg)
-
-        samples = np.concatenate([frame.samples for frame in frames])
-        first_header = frames[0].header
-        frequency_from_hz = frames[0].frequency_from_hz or request.frequency_from_hz
-        frequency_to_hz = frames[0].frequency_to_hz or request.frequency_to_hz
-        sample_rate_hz = frequency_to_hz - frequency_from_hz
-        unit = frames[0].unit
+        stream_capture = await self._read_capture(request)
+        first_header = stream_capture.first_header
+        sample_rate_hz = stream_capture.frequency_to_hz - stream_capture.frequency_from_hz
 
         return IQCapture(
-            samples=samples,
+            samples=np.empty(0, dtype=np.complex128),
             sample_rate_hz=sample_rate_hz,
-            frequency_from_hz=frequency_from_hz,
-            frequency_to_hz=frequency_to_hz,
-            unit=unit,
-            packet_count=len(frames),
+            frequency_from_hz=stream_capture.frequency_from_hz,
+            frequency_to_hz=stream_capture.frequency_to_hz,
+            unit=stream_capture.unit,
+            packet_count=stream_capture.packet_count,
             configured_device=configured_device,
+            sample_count=stream_capture.sample_count,
+            density=stream_capture.density,
             metadata={
                 "stream_url": self._settings.aaronia_stream_url,
                 "control_url": self._settings.aaronia_control_url,
@@ -145,6 +152,9 @@ class AaroniaIQSource:
                 "first_packet_size": first_header.get("size"),
                 "first_packet_sample_size": first_header.get("sampleSize"),
                 "first_packet_samples": first_header.get("samples"),
+                "stream_sample_count": stream_capture.sample_count,
+                "capture_elapsed_seconds": stream_capture.elapsed_seconds,
+                "density_mode": "streaming_fft_average",
             },
         )
 
@@ -181,13 +191,19 @@ class AaroniaIQSource:
                 msg = f"Aaronia control endpoint failed: {exc}"
                 raise RuntimeError(msg) from exc
 
-    async def _read_frames(self, request: DensityRequest) -> list[IQFrame]:
+    async def _read_capture(self, request: DensityRequest) -> AaroniaStreamCapture:
         parser = AaroniaStreamParser(
             sample_format=_stream_format(self._settings.aaronia_stream_url),
         )
-        frames: list[IQFrame] = []
+        first_header: dict[str, Any] | None = None
+        frequency_from_hz = request.frequency_from_hz
+        frequency_to_hz = request.frequency_to_hz
+        unit = "normalized"
+        accumulator: StreamingDensityAccumulator | None = None
+        packet_count = 0
         sample_count = 0
-        deadline = time.monotonic() + request.capture_seconds
+        started_at = time.monotonic()
+        deadline = started_at + request.capture_seconds
         timeout = httpx.Timeout(
             connect=self._settings.stream_connect_timeout_seconds,
             read=self._settings.stream_read_timeout_seconds,
@@ -203,11 +219,26 @@ class AaroniaIQSource:
                 response.raise_for_status()
                 async for chunk in response.aiter_bytes():
                     for frame in parser.feed(chunk):
-                        frames.append(frame)
+                        if first_header is None:
+                            first_header = frame.header
+                            frequency_from_hz = frame.frequency_from_hz or request.frequency_from_hz
+                            frequency_to_hz = frame.frequency_to_hz or request.frequency_to_hz
+                            unit = frame.unit
+                            accumulator = StreamingDensityAccumulator(
+                                frequency_from_hz=frequency_from_hz,
+                                frequency_to_hz=frequency_to_hz,
+                                bins=request.bins,
+                                window=request.window,
+                            )
+
+                        if accumulator is None:
+                            msg = "Aaronia stream accumulator was not initialized"
+                            raise RuntimeError(msg)
+
+                        accumulator.add_samples(frame.samples)
+                        packet_count += 1
                         sample_count += int(frame.samples.size)
 
-                    if sample_count >= self._settings.max_capture_samples:
-                        break
                     if sample_count >= request.bins and time.monotonic() >= deadline:
                         break
         except httpx.TimeoutException as exc:
@@ -217,7 +248,20 @@ class AaroniaIQSource:
             msg = f"Aaronia IQ stream failed: {exc}"
             raise RuntimeError(msg) from exc
 
-        return frames
+        if first_header is None or accumulator is None:
+            msg = "Aaronia stream did not return any IQ frames"
+            raise RuntimeError(msg)
+
+        return AaroniaStreamCapture(
+            density=accumulator.finish(),
+            sample_count=sample_count,
+            packet_count=packet_count,
+            first_header=first_header,
+            frequency_from_hz=frequency_from_hz,
+            frequency_to_hz=frequency_to_hz,
+            unit=unit,
+            elapsed_seconds=time.monotonic() - started_at,
+        )
 
 
 async def read_aaronia_device_status(settings: Settings) -> DeviceStatusResponse:

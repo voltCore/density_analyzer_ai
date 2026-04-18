@@ -40,6 +40,80 @@ class RangeDensityAssessment:
     label: Literal["quiet", "sparse", "moderate", "dense"]
 
 
+class StreamingDensityAccumulator:
+    """Incrementally average FFT power for long IQ captures."""
+
+    def __init__(
+        self,
+        *,
+        frequency_from_hz: float,
+        frequency_to_hz: float,
+        bins: int,
+        window: Literal["hann", "rectangular"] = "hann",
+    ) -> None:
+        if frequency_to_hz <= frequency_from_hz:
+            msg = "frequency_to_hz must be greater than frequency_from_hz"
+            raise ValueError(msg)
+        if bins < 16:
+            msg = "bins must be at least 16"
+            raise ValueError(msg)
+
+        self.frequency_from_hz = frequency_from_hz
+        self.frequency_to_hz = frequency_to_hz
+        self.bins = bins
+        self.sample_rate_hz = frequency_to_hz - frequency_from_hz
+        self.bin_width_hz = self.sample_rate_hz / bins
+        self.sample_count = 0
+        self.averaged_segments = 0
+
+        self._weights = _window(window, bins)
+        self._window_power = float(np.sum(self._weights**2))
+        self._power_sum = np.zeros(bins, dtype=np.float64)
+        self._pending = np.empty(0, dtype=np.complex128)
+
+    def add_samples(self, samples: NDArray[np.complexfloating]) -> None:
+        if samples.size == 0:
+            return
+
+        prepared = samples.astype(np.complex128, copy=False)
+        self.sample_count += int(prepared.size)
+        if self._pending.size:
+            prepared = np.concatenate((self._pending, prepared))
+
+        segment_count = prepared.size // self.bins
+        segment_end = segment_count * self.bins
+        if segment_count:
+            segments = prepared[:segment_end].reshape((-1, self.bins))
+            self._add_segments(segments)
+
+        self._pending = prepared[segment_end:].copy()
+
+    def finish(self) -> DensityComputation:
+        if self.sample_count == 0:
+            msg = "at least one IQ sample is required"
+            raise ValueError(msg)
+
+        if self.averaged_segments == 0:
+            padded = np.pad(self._pending, (0, self.bins - self._pending.size))
+            self._add_segments(padded.reshape((1, self.bins)))
+
+        psd = self._power_sum / self.averaged_segments / (
+            self.sample_rate_hz * self._window_power
+        )
+        return _finalize_density(
+            psd.astype(np.float64, copy=False),
+            frequency_from_hz=self.frequency_from_hz,
+            bin_width_hz=self.bin_width_hz,
+            averaged_segments=self.averaged_segments,
+        )
+
+    def _add_segments(self, segments: NDArray[np.complex128]) -> None:
+        weighted = segments * self._weights
+        spectrum = np.fft.fftshift(np.fft.fft(weighted, n=self.bins, axis=1), axes=1)
+        self._power_sum += np.sum(np.abs(spectrum) ** 2, axis=0)
+        self.averaged_segments += int(segments.shape[0])
+
+
 def compute_density(
     samples: NDArray[np.complexfloating],
     *,
@@ -75,32 +149,11 @@ def compute_density(
     spectrum = np.fft.fftshift(np.fft.fft(weighted, n=bins, axis=1), axes=1)
     psd = np.mean(np.abs(spectrum) ** 2, axis=0) / (sample_rate_hz * window_power)
     psd = psd.astype(np.float64, copy=False)
-    power = psd * bin_width_hz
-
-    density_db = _to_db(psd)
-    power_db = _to_db(power)
-    frequencies = frequency_from_hz + (np.arange(bins, dtype=np.float64) + 0.5) * bin_width_hz
-
-    peak_index = int(np.argmax(psd))
-    mean_density = float(np.mean(psd))
-    peak_density = float(psd[peak_index])
-    integrated_power = float(np.sum(power))
-
-    return DensityComputation(
-        frequencies_hz=frequencies,
-        density_linear=psd,
-        density_db_per_hz=density_db,
-        power_linear=power,
-        power_db=power_db,
+    return _finalize_density(
+        psd,
+        frequency_from_hz=frequency_from_hz,
         bin_width_hz=bin_width_hz,
         averaged_segments=int(segments.shape[0]),
-        mean_density_linear=mean_density,
-        mean_density_db_per_hz=_scalar_to_db(mean_density),
-        peak_density_linear=peak_density,
-        peak_density_db_per_hz=_scalar_to_db(peak_density),
-        peak_frequency_hz=float(frequencies[peak_index]),
-        integrated_power_linear=integrated_power,
-        integrated_power_db=_scalar_to_db(integrated_power),
     )
 
 
@@ -158,6 +211,41 @@ def _window(window: Literal["hann", "rectangular"], bins: int) -> NDArray[np.flo
             return np.hanning(bins).astype(np.float64, copy=False)
         case "rectangular":
             return np.ones(bins, dtype=np.float64)
+
+
+def _finalize_density(
+    psd: NDArray[np.float64],
+    *,
+    frequency_from_hz: float,
+    bin_width_hz: float,
+    averaged_segments: int,
+) -> DensityComputation:
+    power = psd * bin_width_hz
+    density_db = _to_db(psd)
+    power_db = _to_db(power)
+    frequencies = frequency_from_hz + (np.arange(psd.size, dtype=np.float64) + 0.5) * bin_width_hz
+
+    peak_index = int(np.argmax(psd))
+    mean_density = float(np.mean(psd))
+    peak_density = float(psd[peak_index])
+    integrated_power = float(np.sum(power))
+
+    return DensityComputation(
+        frequencies_hz=frequencies,
+        density_linear=psd,
+        density_db_per_hz=density_db,
+        power_linear=power,
+        power_db=power_db,
+        bin_width_hz=bin_width_hz,
+        averaged_segments=averaged_segments,
+        mean_density_linear=mean_density,
+        mean_density_db_per_hz=_scalar_to_db(mean_density),
+        peak_density_linear=peak_density,
+        peak_density_db_per_hz=_scalar_to_db(peak_density),
+        peak_frequency_hz=float(frequencies[peak_index]),
+        integrated_power_linear=integrated_power,
+        integrated_power_db=_scalar_to_db(integrated_power),
+    )
 
 
 def _to_db(values: NDArray[np.float64]) -> NDArray[np.float64]:

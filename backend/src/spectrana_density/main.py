@@ -111,7 +111,7 @@ def create_app() -> FastAPI:
         source = create_source(runtime_settings)
         try:
             capture = await source.capture(request)
-            result = compute_density(
+            result = capture.density or compute_density(
                 capture.samples,
                 frequency_from_hz=capture.frequency_from_hz,
                 frequency_to_hz=capture.frequency_to_hz,
@@ -128,13 +128,16 @@ def create_app() -> FastAPI:
 
         density_unit = "V^2/Hz" if capture.unit.lower() in {"v", "volt", "volts"} else "unit^2/Hz"
         power_unit = "V^2" if capture.unit.lower() in {"v", "volt", "volts"} else "unit^2"
+        sample_count = (
+            capture.sample_count if capture.sample_count is not None else int(capture.samples.size)
+        )
         summary = DensitySummary(
             frequency_from_hz=capture.frequency_from_hz,
             frequency_to_hz=capture.frequency_to_hz,
             center_frequency_hz=(capture.frequency_from_hz + capture.frequency_to_hz) / 2,
             span_hz=capture.frequency_to_hz - capture.frequency_from_hz,
             sample_rate_hz=capture.sample_rate_hz,
-            sample_count=int(capture.samples.size),
+            sample_count=sample_count,
             bin_count=request.bins,
             bin_width_hz=result.bin_width_hz,
             averaged_segments=result.averaged_segments,

@@ -76,6 +76,8 @@ npm run build
 ## IQ Source Modes
 
 By default, the backend runs with `SOURCE_MODE=mock`, so the FFT/bin calculation can be tested without a SPECTRAN device.
+In `SOURCE_MODE=aaronia`, `capture_seconds` controls how long the backend reads the live IQ stream.
+The Aaronia adapter averages FFT power while the stream is being read, so long captures do not require storing all IQ samples in memory.
 
 For a real device:
 
