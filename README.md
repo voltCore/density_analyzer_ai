@@ -1,38 +1,38 @@
-# Spectrana Density
+# Density Analyzer AI
 
-Backend + frontend для числового розрахунку щільності сигналу з IQ-даних Aaronia SPECTRAN V6 / RTSA Suite PRO. Frontend приймає частоту `з` та `по`, кількість `bins`, час збору IQ і reference level. Backend передає налаштування на прилад, читає IQ-потік, рахує power spectral density по FFT-бінах і повертає тільки числові дані.
+Backend and frontend for numerical signal density analysis from Aaronia SPECTRAN V6 / RTSA Suite PRO IQ data. The frontend accepts a frequency range, bin count, IQ capture duration, and optional reference level. The backend can send capture settings to the device, read the IQ stream, calculate power spectral density across FFT bins, and return numerical data for analysis, export, and comparison.
 
-## Що рахується
+## What It Calculates
 
-Backend оцінює PSD для complex IQ:
+The backend estimates PSD for complex IQ data:
 
-- діапазон: `frequency_to_hz - frequency_from_hz`;
-- ширина біна: `span / bins`;
-- FFT: complex IQ, `fftshift`, Hann window за замовчуванням;
-- density: `unit^2/Hz`, або `V^2/Hz`, якщо stream header має `unit=volt`;
-- integrated power: сума `density * bin_width_hz`.
+- range: `frequency_to_hz - frequency_from_hz`;
+- bin width: `span / bins`;
+- FFT: complex IQ, `fftshift`, Hann window by default;
+- density: `unit^2/Hz`, or `V^2/Hz` when the stream header reports `unit=volt`;
+- integrated power: sum of `density * bin_width_hz`.
 
-Також backend дає оцінку щільності діапазону:
+The backend also estimates how occupied the selected frequency range is:
 
-- `noise_floor_db_per_hz`: медіана PSD по всіх bins;
-- `threshold_db_per_hz`: `noise_floor + occupancy_threshold_db`, за замовчуванням `+6 dB`;
-- `occupied_bins`: кількість bins вище порогу;
+- `noise_floor_db_per_hz`: median PSD across all bins;
+- `threshold_db_per_hz`: `noise_floor + occupancy_threshold_db`, default `+6 dB`;
+- `occupied_bins`: number of bins above the threshold;
 - `occupancy_percent`: `occupied_bins / bins * 100`;
 - `occupied_bandwidth_hz`: `occupied_bins * bin_width_hz`;
-- `label`: `quiet`, `sparse`, `moderate`, або `dense`.
+- `label`: `quiet`, `sparse`, `moderate`, or `dense`.
 
-Для практичної оцінки діапазону головне поле: `occupancy_percent`. Наприклад, `30%` означає, що приблизно третина вибраного частотного діапазону має PSD вище локального noise floor на заданий поріг.
+For practical range assessment, the main field is `occupancy_percent`. For example, `30%` means that roughly one third of the selected frequency range has PSD above the local noise floor by the configured threshold.
 
-Без калібрувальних коефіцієнтів конкретного тракту це не `dBm/Hz`. Якщо IQ з RTSA приходить у volts, backend чесно показує `V^2/Hz`; якщо ні, показує normalized `unit^2/Hz`.
+Without calibration coefficients for the full RF chain, this is not an absolute `dBm/Hz` measurement. If IQ data from RTSA is reported in volts, the backend returns `V^2/Hz`; otherwise it returns normalized `unit^2/Hz`.
 
-## Структура
+## Project Structure
 
 ```text
 backend/   FastAPI, uv, Ruff, ty, pytest, numpy FFT/bin logic
-frontend/  Vite + React + TypeScript, форма та числові таблиці
+frontend/  Vite + React + TypeScript, input form, numerical tables, help modal
 ```
 
-## Запуск backend
+## Run Backend
 
 ```bash
 cd backend
@@ -41,9 +41,9 @@ uv sync
 uv run uvicorn spectrana_density.main:app --app-dir src --host 0.0.0.0 --port 8001 --reload --reload-dir src
 ```
 
-API буде на `http://localhost:8001`.
+The API will be available at `http://localhost:8001`.
 
-Перевірки:
+Checks:
 
 ```bash
 cd backend
@@ -52,7 +52,7 @@ uv run ty check .
 uv run pytest
 ```
 
-## Запуск frontend
+## Run Frontend
 
 ```bash
 cd frontend
@@ -61,9 +61,9 @@ npm install
 npm run dev
 ```
 
-Frontend буде на `http://localhost:5173`.
+The frontend will be available at `http://localhost:5173`.
 
-Перевірки:
+Checks:
 
 ```bash
 cd frontend
@@ -71,11 +71,11 @@ npm run typecheck
 npm run build
 ```
 
-## Режими джерела IQ
+## IQ Source Modes
 
-За замовчуванням backend працює в `SOURCE_MODE=mock`, щоб можна було перевірити FFT/bin-розрахунок без SPECTRAN.
+By default, the backend runs with `SOURCE_MODE=mock`, so the FFT/bin calculation can be tested without a SPECTRAN device.
 
-Для реального приладу:
+For a real device:
 
 ```env
 SOURCE_MODE=aaronia
@@ -84,7 +84,7 @@ AARONIA_CONTROL_URL=http://192.168.1.178:54664/control
 AARONIA_CONTROL_METHOD=PUT
 ```
 
-Для поточної Aaronia IP вже записаний у [backend/.env](/Users/hliblaskin/Documents/spectrana_density/backend/.env). Перевірка з цієї машини:
+Create `backend/.env` from `backend/.env.example` and set the IP address and ports for the current Aaronia installation. Basic checks from this machine:
 
 ```bash
 ping -c 3 192.168.1.178
@@ -94,22 +94,22 @@ curl -X PUT -H 'Content-Type: application/json' \
   http://192.168.1.178:54664/control
 ```
 
-`POST /api/density` надсилає на `/control` JSON з:
+`POST /api/density` sends a JSON payload to `/control` with:
 
 - `frequencyStart`
 - `frequencyEnd`
 - `frequencyCenter`
 - `frequencySpan`
 - `frequencyBins`
-- `referenceLevel`, якщо вказано
+- `referenceLevel`, when provided
 
-Якщо у вашій інсталяції RTSA очікує `POST`, змініть `AARONIA_CONTROL_METHOD=POST`. Якщо потрібен інший payload для конкретного workflow RTSA, змінюється тільки адаптер [aaronia.py](/Users/hliblaskin/Documents/spectrana_density/backend/src/spectrana_density/sources/aaronia.py).
+If your RTSA installation expects `POST`, set `AARONIA_CONTROL_METHOD=POST`. If a different control payload is required for a specific RTSA workflow, only the adapter in `backend/src/spectrana_density/sources/aaronia.py` needs to change.
 
 ## API
 
 `GET /api/settings`
 
-Повертає default values для форми.
+Returns default values for the frontend form.
 
 `POST /api/density`
 
@@ -127,7 +127,7 @@ curl -X PUT -H 'Content-Type: application/json' \
 }
 ```
 
-Відповідь містить `summary` і масив `bins` з:
+The response contains `summary` and a `bins` array with:
 
 - `frequency_hz`
 - `density_linear`
@@ -135,40 +135,51 @@ curl -X PUT -H 'Content-Type: application/json' \
 - `power_linear`
 - `power_db`
 
-## Експорт і порівняння
+## Export And Comparison
 
-Frontend після кожного розрахунку дає:
+After each calculation, the frontend provides:
 
-- `Export JSON`: повний snapshot з summary, range assessment, налаштуваннями capture, metadata і bins.
-- `Export CSV`: табличний файл для Excel/LibreOffice/Python, з summary rows і bin rows.
-- `Зберегти snapshot`: зберігає вимір у backend SQLite БД для порівняння.
-- `Імпорт JSON`: додає раніше експортований snapshot у backend SQLite БД.
+- `Export JSON`: full snapshot with summary, range assessment, capture settings, metadata, and bins.
+- `Export CSV`: table file for Excel, LibreOffice, or Python with summary rows and bin rows.
+- `Save snapshot`: saves a measurement in the backend SQLite database for comparison.
+- `Import JSON`: imports a previously exported snapshot into the backend SQLite database.
 
-Перед збереженням можна ввести назву snapshot-а. Якщо назва порожня, backend створить її автоматично з часу виміру, діапазону MHz і `occupancy_percent`.
+Before saving, a snapshot name can be entered. If the name is empty, the backend creates one automatically from the measurement time, MHz range, and `occupancy_percent`.
 
-SQLite файл за замовчуванням:
+Default SQLite file:
 
 ```text
 backend/data/spectrana_density.sqlite3
 ```
 
-API для БД:
+Database API:
 
-- `GET /api/measurements`: список збережених snapshot-ів.
-- `POST /api/measurements`: зберегти snapshot.
-- `GET /api/measurements/{id}`: прочитати повний snapshot для порівняння.
-- `DELETE /api/measurements/{id}`: видалити snapshot.
+- `GET /api/measurements`: list saved snapshots.
+- `POST /api/measurements`: save a snapshot.
+- `GET /api/measurements/{id}`: read a full snapshot for comparison.
+- `DELETE /api/measurements/{id}`: delete a snapshot.
 
-## AI пояснення порівняння
+## CSV Format
 
-У блоці `Порівняння snapshot-ів` є кнопка `Пояснити через AI`. Frontend відправляє два
-snapshot-и на backend endpoint:
+CSV files exported by the frontend use UTF-8 text with commas as separators.
 
-- `POST /api/comparisons/ai-explanation`: генерує українське пояснення, який сигнал
-  щільніший і чому.
+Header:
 
-Backend не передає API-ключ у браузер. Для роботи потрібні інтернет і ключ у
-`backend/.env`:
+```csv
+record_type,name,value,unit,index,frequency_hz,density_linear,density_db_per_hz,power_linear,power_db
+```
+
+Summary rows use `record_type` values such as `capture`, `range`, or `summary`, and fill the `name`, `value`, and `unit` columns. Bin rows use `record_type=bin` and fill `index`, `frequency_hz`, `density_linear`, `density_db_per_hz`, `power_linear`, and `power_db`.
+
+The current import flow accepts JSON snapshots, not CSV files. CSV is intended for spreadsheet or script analysis. To bring a measurement back into the app with all comparison data preserved, export and import JSON.
+
+## AI Comparison Explanation
+
+The `Snapshot comparison` block includes an `Explain with AI` button. The frontend sends two snapshots to the backend endpoint:
+
+- `POST /api/comparisons/ai-explanation`: generates a Ukrainian explanation of which signal is denser and why.
+
+The backend does not expose the API key to the browser. Internet access and a key in `backend/.env` are required:
 
 ```text
 OPENAI_API_KEY=...
@@ -177,15 +188,18 @@ AI_MODEL=gpt-5-mini
 AI_TIMEOUT_SECONDS=90
 ```
 
-Якщо ключа або інтернету немає, AI-пояснення не генерується, а frontend показує причину
-помилки. Числове табличне порівняння при цьому працює без AI.
+If there is no key or internet access, the AI explanation is not generated and the frontend shows the error reason. Numerical table comparison still works without AI.
 
-## Джерела по Aaronia
+## In-App Help
 
-Я орієнтував інтеграцію на відкриті матеріали Aaronia:
+The frontend includes a `?` help button. It explains what the project measures, what each form field means, how bins and table cells should be interpreted, how CSV rows are structured, and how snapshots are compared.
 
-- [Aaronia forum: C# just IQ data streaming](https://v6-forum.aaronia.de/forum/topic/c-just-iq-data-streaming/) описує RTSA HTTP stream як JSON header + binary IQ data payload, з I/Q interleaved raw values.
-- [Aaronia forum: control endpoint](https://v6-forum.aaronia.de/forum/topic/about-control-endpoint/) згадує керування capture settings через control endpoint, включно з frequency center/start/bins/reference level.
-- [Aaronia Open Source RTSA HTTP API sequence example](https://github.com/Aaronia-Open-source/python_RTSA_HTTP_API_Sequence_Example) показує практику HTTP remote configuration для RTSA.
+## Aaronia References
 
-Точний control payload може залежати від версії RTSA Suite PRO і вашого graph/config. Тому backend ізолює це в одному адаптері, а mock-режим дозволяє тестувати решту системи незалежно від приладу.
+The integration is based on public Aaronia materials:
+
+- [Aaronia forum: C# just IQ data streaming](https://v6-forum.aaronia.de/forum/topic/c-just-iq-data-streaming/) describes RTSA HTTP stream data as a JSON header plus binary IQ payload with interleaved I/Q raw values.
+- [Aaronia forum: control endpoint](https://v6-forum.aaronia.de/forum/topic/about-control-endpoint/) mentions capture setting control through a control endpoint, including frequency center/start/bins/reference level.
+- [Aaronia Open Source RTSA HTTP API sequence example](https://github.com/Aaronia-Open-source/python_RTSA_HTTP_API_Sequence_Example) shows practical HTTP remote configuration for RTSA.
+
+The exact control payload may depend on the RTSA Suite PRO version and graph/configuration. The backend isolates this behavior in one adapter, while mock mode allows the rest of the system to be tested independently from the device.
