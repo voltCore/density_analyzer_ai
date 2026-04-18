@@ -2,7 +2,7 @@
 name = "spectrana-density-backend"
 version = "0.1.0"
 description = "Backend for calculating numerical signal density from Aaronia SPECTRAN V6 IQ bins."
-readme = "../README.md"
+readme = { text = "Backend for calculating numerical signal density from Aaronia SPECTRAN V6 IQ bins.", content-type = "text/markdown" }
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
