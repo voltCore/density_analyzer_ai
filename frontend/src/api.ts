@@ -4,6 +4,8 @@ import type {
   DensityRequest,
   DensityResponse,
   DeviceStatusResponse,
+  JammerAnalysisRequest,
+  JammerAnalysisResponse,
   MeasurementCreate,
   MeasurementStored,
   MeasurementSummary,
@@ -67,6 +69,13 @@ export function deleteMeasurement(id: string): Promise<{ deleted: boolean }> {
 
 export function explainComparison(payload: AIComparisonRequest): Promise<AIComparisonResponse> {
   return requestJson<AIComparisonResponse>("/api/comparisons/ai-explanation", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function analyzeJammer(payload: JammerAnalysisRequest): Promise<JammerAnalysisResponse> {
+  return requestJson<JammerAnalysisResponse>("/api/jammer/analyze", {
     method: "POST",
     body: JSON.stringify(payload),
   });

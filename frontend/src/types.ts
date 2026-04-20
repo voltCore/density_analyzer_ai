@@ -172,3 +172,50 @@ export type AIComparisonResponse = {
   caveats: string[];
   explanation: string;
 };
+
+export type JammerAnalysisRequest = {
+  baseline_name: string | null;
+  jammer_name: string | null;
+  response_language: "en" | "uk";
+  threshold_db: number;
+  top_bins_limit: number;
+  baseline: DensityResponse;
+  jammer: DensityResponse;
+};
+
+export type JammerFrequencyBin = {
+  index: number;
+  frequency_hz: number;
+  baseline_density_db_per_hz: number;
+  jammer_density_db_per_hz: number;
+  delta_db: number;
+};
+
+export type JammerAnalysisResponse = {
+  method: string;
+  threshold_db: number;
+  analysis_quality: "bin_level" | "summary_only" | "incompatible";
+  warnings: string[];
+  baseline_name: string;
+  jammer_name: string;
+  compared_bins: number;
+  compared_frequency_from_hz: number | null;
+  compared_frequency_to_hz: number | null;
+  bin_width_hz: number | null;
+  raised_bins: number;
+  raised_percent: number;
+  raised_bandwidth_hz: number;
+  mean_delta_db: number | null;
+  median_delta_db: number | null;
+  p90_delta_db: number | null;
+  max_delta_db: number | null;
+  min_delta_db: number | null;
+  noise_floor_delta_db: number;
+  mean_density_delta_db: number;
+  peak_density_delta_db: number;
+  integrated_power_delta_db: number;
+  peak_delta_frequency_hz: number | null;
+  top_raised_bins: JammerFrequencyBin[];
+  label: "none" | "narrow" | "partial" | "wide" | "broadband" | "unknown";
+  summary: string;
+};

@@ -195,3 +195,50 @@ class AIComparisonResponse(BaseModel):
     numeric_basis: str
     caveats: list[str]
     explanation: str
+
+
+class JammerAnalysisRequest(BaseModel):
+    baseline_name: str | None = Field(default=None, max_length=160)
+    jammer_name: str | None = Field(default=None, max_length=160)
+    response_language: Literal["en", "uk"] = "en"
+    threshold_db: float = Field(default=6.0, ge=0.1, le=60)
+    top_bins_limit: int = Field(default=10, ge=1, le=50)
+    baseline: DensityResponse
+    jammer: DensityResponse
+
+
+class JammerFrequencyBin(BaseModel):
+    index: int
+    frequency_hz: float
+    baseline_density_db_per_hz: float
+    jammer_density_db_per_hz: float
+    delta_db: float
+
+
+class JammerAnalysisResponse(BaseModel):
+    method: str
+    threshold_db: float
+    analysis_quality: Literal["bin_level", "summary_only", "incompatible"]
+    warnings: list[str]
+    baseline_name: str
+    jammer_name: str
+    compared_bins: int
+    compared_frequency_from_hz: float | None = None
+    compared_frequency_to_hz: float | None = None
+    bin_width_hz: float | None = None
+    raised_bins: int
+    raised_percent: float
+    raised_bandwidth_hz: float
+    mean_delta_db: float | None = None
+    median_delta_db: float | None = None
+    p90_delta_db: float | None = None
+    max_delta_db: float | None = None
+    min_delta_db: float | None = None
+    noise_floor_delta_db: float
+    mean_density_delta_db: float
+    peak_density_delta_db: float
+    integrated_power_delta_db: float
+    peak_delta_frequency_hz: float | None = None
+    top_raised_bins: list[JammerFrequencyBin] = Field(default_factory=list)
+    label: Literal["none", "narrow", "partial", "wide", "broadband", "unknown"]
+    summary: str

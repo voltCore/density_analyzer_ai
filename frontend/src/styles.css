@@ -398,6 +398,40 @@ h3 {
   gap: 10px;
 }
 
+.jammer-panel {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #e4e4e7;
+  padding-top: 14px;
+}
+
+.jammer-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.jammer-actions {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.jammer-actions label {
+  min-width: 150px;
+}
+
+.jammer-actions button {
+  min-height: 40px;
+  padding: 8px 12px;
+}
+
+.jammer-result {
+  display: grid;
+  gap: 12px;
+}
+
 .ai-explanation-header {
   display: flex;
   align-items: center;
@@ -666,6 +700,15 @@ tr:hover td {
 
   .compare-controls {
     grid-template-columns: 1fr;
+  }
+
+  .jammer-header {
+    grid-template-columns: 1fr;
+  }
+
+  .jammer-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .snapshot-item {

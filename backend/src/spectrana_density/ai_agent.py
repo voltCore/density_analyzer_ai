@@ -9,7 +9,13 @@ from typing import Any
 import httpx
 
 from spectrana_density.config import Settings
-from spectrana_density.schemas import AIComparisonRequest, AIComparisonResponse, DensityResponse
+from spectrana_density.schemas import (
+    AIComparisonRequest,
+    AIComparisonResponse,
+    DensityResponse,
+    JammerAnalysisRequest,
+)
+from spectrana_density.signal.jammer import analyze_jammer
 
 LanguageCode = str
 
@@ -104,6 +110,17 @@ def build_comparison_context(payload: AIComparisonRequest) -> dict[str, Any]:
         language=language,
     )
     caveats = _comparison_caveats(payload.baseline, payload.comparison, language)
+    jammer_analysis = analyze_jammer(
+        JammerAnalysisRequest(
+            baseline_name=baseline_name,
+            jammer_name=comparison_name,
+            response_language=language,
+            threshold_db=6.0,
+            top_bins_limit=10,
+            baseline=payload.baseline,
+            jammer=payload.comparison,
+        )
+    )
 
     return {
         "response_language": language,
@@ -118,6 +135,7 @@ def build_comparison_context(payload: AIComparisonRequest) -> dict[str, Any]:
         "deltas_signal_2_minus_signal_1": deltas,
         "coverage_winner": _coverage_winner(payload.baseline, payload.comparison, language),
         "energy_winner": _energy_winner(payload.baseline, payload.comparison, language),
+        "jammer_baseline_analysis_at_6db": jammer_analysis.model_dump(),
         "local_assessment": local_assessment,
         "caveats": caveats,
     }
@@ -387,7 +405,8 @@ def _system_prompt(language: LanguageCode) -> str:
             "і пікові bins. Якщо точного пояснення з даних немає, прямо скажи це "
             "і запропонуй найбільш імовірну технічну гіпотезу без вигаданих фактів. "
             "Завжди розділяй висновок про частотне покриття діапазону і висновок "
-            "про енергетичну силу сигналу."
+            "про енергетичну силу сигналу. Якщо в контексті є jammer_baseline_analysis_at_6db, "
+            "використовуй його як основний блок для оцінки джамера відносно чистого baseline."
         )
 
     return (
@@ -396,7 +415,9 @@ def _system_prompt(language: LanguageCode) -> str:
         "mean/peak density, integrated power, noise floor, and peak bins. If the data does "
         "not support a precise explanation, say that directly and provide the most likely "
         "technical hypothesis without inventing facts. Always separate the conclusion about "
-        "frequency-range coverage from the conclusion about signal energy/strength."
+        "frequency-range coverage from the conclusion about signal energy/strength. If "
+        "jammer_baseline_analysis_at_6db is present in the context, use it as the primary "
+        "block for jammer assessment against the clean baseline."
     )
 
 

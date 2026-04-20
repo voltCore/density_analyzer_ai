@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import {
+  analyzeJammer,
   calculateDensity,
   createMeasurement,
   deleteMeasurement,
@@ -18,6 +19,7 @@ import type {
   DensityRequest,
   DensityResponse,
   DeviceStatusResponse,
+  JammerAnalysisResponse,
   MeasurementCreate,
   MeasurementStored,
   MeasurementSummary,
@@ -59,6 +61,10 @@ export default function App() {
   const [aiExplanation, setAiExplanation] = useState<AIComparisonResponse | null>(null);
   const [aiExplanationError, setAiExplanationError] = useState<string | null>(null);
   const [aiExplanationLoading, setAiExplanationLoading] = useState(false);
+  const [jammerAnalysis, setJammerAnalysis] = useState<JammerAnalysisResponse | null>(null);
+  const [jammerAnalysisError, setJammerAnalysisError] = useState<string | null>(null);
+  const [jammerAnalysisLoading, setJammerAnalysisLoading] = useState(false);
+  const [jammerThresholdDb, setJammerThresholdDb] = useState(6);
   const [measurementName, setMeasurementName] = useState("");
   const [storageNotice, setStorageNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +101,8 @@ export default function App() {
   useEffect(() => {
     setAiExplanation(null);
     setAiExplanationError(null);
+    setJammerAnalysis(null);
+    setJammerAnalysisError(null);
   }, [baselineId, comparisonId]);
 
   useEffect(() => {
@@ -297,6 +305,34 @@ export default function App() {
       );
     } finally {
       setAiExplanationLoading(false);
+    }
+  }
+
+  async function handleAnalyzeJammer() {
+    if (!baseline || !comparison) {
+      return;
+    }
+
+    setJammerAnalysisLoading(true);
+    setJammerAnalysisError(null);
+    setJammerAnalysis(null);
+    try {
+      const analysis = await analyzeJammer({
+        baseline_name: baseline.name,
+        jammer_name: comparison.name,
+        response_language: i18n.resolvedLanguage === "uk" ? "uk" : "en",
+        threshold_db: jammerThresholdDb,
+        top_bins_limit: 10,
+        baseline: baseline.result,
+        jammer: comparison.result,
+      });
+      setJammerAnalysis(analysis);
+    } catch (requestError) {
+      setJammerAnalysisError(
+        requestError instanceof Error ? requestError.message : t("errors.jammerUnavailable"),
+      );
+    } finally {
+      setJammerAnalysisLoading(false);
     }
   }
 
@@ -550,10 +586,16 @@ export default function App() {
                 aiExplanation={aiExplanation}
                 aiExplanationError={aiExplanationError}
                 aiExplanationLoading={aiExplanationLoading}
+                jammerAnalysis={jammerAnalysis}
+                jammerAnalysisError={jammerAnalysisError}
+                jammerAnalysisLoading={jammerAnalysisLoading}
+                jammerThresholdDb={jammerThresholdDb}
                 onBaselineChange={setBaselineId}
                 onComparisonChange={setComparisonId}
                 onDeleteSnapshot={handleDeleteSnapshot}
                 onExplainComparison={handleExplainComparison}
+                onAnalyzeJammer={handleAnalyzeJammer}
+                onJammerThresholdChange={setJammerThresholdDb}
               />
 
               <div className="unit-line">
@@ -740,10 +782,16 @@ function ComparisonPanel({
   aiExplanation,
   aiExplanationError,
   aiExplanationLoading,
+  jammerAnalysis,
+  jammerAnalysisError,
+  jammerAnalysisLoading,
+  jammerThresholdDb,
   onBaselineChange,
   onComparisonChange,
   onDeleteSnapshot,
   onExplainComparison,
+  onAnalyzeJammer,
+  onJammerThresholdChange,
 }: {
   measurements: MeasurementSummary[];
   baselineId: string;
@@ -753,10 +801,16 @@ function ComparisonPanel({
   aiExplanation: AIComparisonResponse | null;
   aiExplanationError: string | null;
   aiExplanationLoading: boolean;
+  jammerAnalysis: JammerAnalysisResponse | null;
+  jammerAnalysisError: string | null;
+  jammerAnalysisLoading: boolean;
+  jammerThresholdDb: number;
   onBaselineChange: (id: string) => void;
   onComparisonChange: (id: string) => void;
   onDeleteSnapshot: (id: string) => void;
   onExplainComparison: () => void;
+  onAnalyzeJammer: () => void;
+  onJammerThresholdChange: (thresholdDb: number) => void;
 }) {
   const { t } = useTranslation();
 
@@ -798,6 +852,14 @@ function ComparisonPanel({
           {baseline && comparison ? (
             <>
               <ComparisonMetrics baseline={baseline} comparison={comparison} />
+              <JammerAnalysisPanel
+                analysis={jammerAnalysis}
+                error={jammerAnalysisError}
+                loading={jammerAnalysisLoading}
+                thresholdDb={jammerThresholdDb}
+                onAnalyze={onAnalyzeJammer}
+                onThresholdChange={onJammerThresholdChange}
+              />
               <AIComparisonPanel
                 explanation={aiExplanation}
                 error={aiExplanationError}
@@ -830,6 +892,130 @@ function ComparisonPanel({
         </>
       )}
     </section>
+  );
+}
+
+function JammerAnalysisPanel({
+  analysis,
+  error,
+  loading,
+  thresholdDb,
+  onAnalyze,
+  onThresholdChange,
+}: {
+  analysis: JammerAnalysisResponse | null;
+  error: string | null;
+  loading: boolean;
+  thresholdDb: number;
+  onAnalyze: () => void;
+  onThresholdChange: (thresholdDb: number) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="jammer-panel">
+      <div className="jammer-header">
+        <div>
+          <h3>{t("jammer.title")}</h3>
+          <p className="helper-text">{t("jammer.helper")}</p>
+        </div>
+        <div className="jammer-actions">
+          <label>
+            {t("jammer.threshold")}
+            <input
+              min="0.1"
+              max="60"
+              step="0.5"
+              type="number"
+              value={thresholdDb}
+              onChange={(event) => onThresholdChange(Number(event.target.value))}
+            />
+          </label>
+          <button disabled={loading} type="button" onClick={onAnalyze}>
+            {loading ? t("jammer.loading") : t("jammer.button")}
+          </button>
+        </div>
+      </div>
+
+      {error ? <p className="ai-error">{error}</p> : null}
+
+      {analysis ? (
+        <div className="jammer-result">
+          <p className="helper-text strong">{analysis.summary}</p>
+          {analysis.warnings.length > 0 ? (
+            <ul className="ai-caveats">
+              {analysis.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="settings-grid">
+            <InfoItem
+              label={t("jammer.raisedRange")}
+              value={`${formatCompactNumber(analysis.raised_percent)}%`}
+            />
+            <InfoItem
+              label={t("jammer.raisedBandwidth")}
+              value={`${formatHz(analysis.raised_bandwidth_hz)} Hz`}
+            />
+            <InfoItem
+              label={t("jammer.raisedBins")}
+              value={`${analysis.raised_bins} / ${analysis.compared_bins}`}
+            />
+            <InfoItem
+              label={t("jammer.noiseFloorDelta")}
+              value={`${signed(analysis.noise_floor_delta_db)} dB`}
+            />
+            <InfoItem
+              label={t("jammer.meanDelta")}
+              value={formatOptionalDb(analysis.mean_delta_db, t)}
+            />
+            <InfoItem
+              label={t("jammer.medianDelta")}
+              value={formatOptionalDb(analysis.median_delta_db, t)}
+            />
+            <InfoItem label={t("jammer.p90Delta")} value={formatOptionalDb(analysis.p90_delta_db, t)} />
+            <InfoItem label={t("jammer.maxDelta")} value={formatOptionalDb(analysis.max_delta_db, t)} />
+            <InfoItem
+              label={t("jammer.integratedPowerDelta")}
+              value={`${signed(analysis.integrated_power_delta_db)} dB`}
+            />
+            <InfoItem
+              label={t("jammer.peakDeltaFrequency")}
+              value={
+                analysis.peak_delta_frequency_hz === null
+                  ? t("device.noData")
+                  : `${formatHz(analysis.peak_delta_frequency_hz)} Hz`
+              }
+            />
+          </div>
+          {analysis.top_raised_bins.length > 0 ? (
+            <div className="compare-table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t("jammer.frequency")}</th>
+                    <th>{t("jammer.baselinePsd")}</th>
+                    <th>{t("jammer.jammerPsd")}</th>
+                    <th>{t("jammer.delta")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analysis.top_raised_bins.map((bin) => (
+                    <tr key={`${bin.index}-${bin.frequency_hz}`}>
+                      <td>{formatHz(bin.frequency_hz)} Hz</td>
+                      <td>{formatDbPerHz(bin.baseline_density_db_per_hz)}</td>
+                      <td>{formatDbPerHz(bin.jammer_density_db_per_hz)}</td>
+                      <td>{`${signed(bin.delta_db)} dB`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1180,6 +1366,10 @@ function formatDb(value: number) {
 
 function formatDbPerHz(value: number) {
   return `${formatCompactNumber(value)} dB/Hz`;
+}
+
+function formatOptionalDb(value: number | null, t: TFunction) {
+  return value === null ? t("device.noData") : `${signed(value)} dB`;
 }
 
 function formatMaybeNumber(

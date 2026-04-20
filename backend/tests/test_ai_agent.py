@@ -41,6 +41,7 @@ def test_build_comparison_context_identifies_denser_comparison() -> None:
     assert context["local_assessment"]["primary_metric"] == "occupancy_percent"
     assert "is denser" in context["local_assessment"]["numeric_basis"]
     assert context["deltas_comparison_minus_baseline"]["occupancy_percent_points"] == 7.5
+    assert context["jammer_baseline_analysis_at_6db"]["threshold_db"] == 6.0
 
 
 def test_build_comparison_context_marks_caution_for_nonmatching_capture() -> None:

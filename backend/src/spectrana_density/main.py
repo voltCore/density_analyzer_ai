@@ -17,6 +17,8 @@ from spectrana_density.schemas import (
     DensityResponse,
     DensitySummary,
     DeviceStatusResponse,
+    JammerAnalysisRequest,
+    JammerAnalysisResponse,
     MeasurementCreate,
     MeasurementStored,
     MeasurementSummary,
@@ -24,6 +26,7 @@ from spectrana_density.schemas import (
     SettingsResponse,
 )
 from spectrana_density.signal.density import assess_range_density, compute_density
+from spectrana_density.signal.jammer import analyze_jammer
 from spectrana_density.sources.aaronia import mock_device_status, read_aaronia_device_status
 from spectrana_density.sources.factory import create_source
 from spectrana_density.storage import MeasurementStore
@@ -102,6 +105,12 @@ def create_app() -> FastAPI:
             return await explain_signal_comparison(payload, runtime_settings)
         except AIComparisonUnavailableError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post("/api/jammer/analyze")
+    async def analyze_jammer_measurement(
+        payload: JammerAnalysisRequest,
+    ) -> JammerAnalysisResponse:
+        return analyze_jammer(payload)
 
     @app.post("/api/density")
     async def calculate_density(
