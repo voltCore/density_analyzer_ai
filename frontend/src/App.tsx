@@ -969,8 +969,11 @@ function RangeAssessmentPanel({ result }: { result: DensityResponse }) {
         </span>
       </div>
       <div className="settings-grid">
-        <InfoItem label={t("range.noiseFloor")} value={formatDb(assessment.noise_floor_db_per_hz)} />
-        <InfoItem label={t("range.threshold")} value={formatDb(assessment.threshold_db_per_hz)} />
+        <InfoItem
+          label={t("range.noiseFloor")}
+          value={formatDbPerHz(assessment.noise_floor_db_per_hz)}
+        />
+        <InfoItem label={t("range.threshold")} value={formatDbPerHz(assessment.threshold_db_per_hz)} />
         <InfoItem
           label={t("range.occupiedBins")}
           value={`${assessment.occupied_bins} / ${result.summary.bin_count}`}
@@ -1173,6 +1176,10 @@ function formatHz(value: number) {
 
 function formatDb(value: number) {
   return `${formatCompactNumber(value)} dB`;
+}
+
+function formatDbPerHz(value: number) {
+  return `${formatCompactNumber(value)} dB/Hz`;
 }
 
 function formatMaybeNumber(

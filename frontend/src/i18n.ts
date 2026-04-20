@@ -134,8 +134,8 @@ const resources = {
         title: "Range density assessment",
         line:
           "{{percent}}% of the range is above the noise floor by {{threshold}} dB",
-        noiseFloor: "Noise floor",
-        threshold: "Threshold",
+        noiseFloor: "PSD noise floor",
+        threshold: "PSD threshold",
         occupiedBins: "Occupied bins",
         occupiedBandwidth: "Occupied bandwidth",
         peakOverFloor: "Peak over floor",
@@ -315,14 +315,14 @@ const resources = {
             title: "Range density assessment",
             items: [
               {
-                term: "Noise floor",
+                term: "PSD noise floor",
                 description:
-                  "Local baseline noise density, taken as median PSD across bins. The occupancy threshold is calculated from it.",
+                  "Local baseline noise density in dB/Hz, taken as median PSD across bins. It is not the same unit as the analyzer noise floor in dBm.",
               },
               {
-                term: "Threshold",
+                term: "PSD threshold",
                 description:
-                  "Noise floor plus Occupancy threshold. Bins above this level are treated as occupied.",
+                  "PSD noise floor plus Occupancy threshold. Bins above this dB/Hz level are treated as occupied.",
               },
               {
                 term: "Occupied bins",
@@ -586,8 +586,8 @@ const resources = {
         title: "Оцінка щільності діапазону",
         line:
           "{{percent}}% діапазону вище рівня шуму на {{threshold}} dB",
-        noiseFloor: "Рівень шуму",
-        threshold: "Поріг",
+        noiseFloor: "PSD рівень шуму",
+        threshold: "PSD поріг",
         occupiedBins: "Зайняті клітинки",
         occupiedBandwidth: "Зайнята смуга",
         peakOverFloor: "Пік над шумом",
@@ -767,14 +767,14 @@ const resources = {
             title: "Оцінка щільності діапазону",
             items: [
               {
-                term: "Рівень шуму",
+                term: "PSD рівень шуму",
                 description:
-                  "Локальна базова щільність шуму, взята як медіана PSD по клітинках. Від неї система рахує поріг зайнятості.",
+                  "Локальна базова щільність шуму в dB/Hz, взята як медіана PSD по клітинках. Це не та сама одиниця, що noise floor аналізатора в dBm.",
               },
               {
-                term: "Поріг",
+                term: "PSD поріг",
                 description:
-                  "Рівень шуму плюс поріг зайнятості. Клітинки вище цього рівня вважаються зайнятими.",
+                  "PSD рівень шуму плюс поріг зайнятості. Клітинки вище цього рівня dB/Hz вважаються зайнятими.",
               },
               {
                 term: "Зайняті клітинки",
