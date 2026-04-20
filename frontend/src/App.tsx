@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   calculateDensity,
+  compareConductedJammers,
   createMeasurement,
   deleteMeasurement,
   explainComparison,
@@ -14,7 +15,10 @@ import {
 } from "./api";
 import type {
   AIComparisonResponse,
+  AaroniaSpanMode,
   CaptureSettings,
+  ConductedJammerComparisonResponse,
+  ConductedJammerWinner,
   DensityRequest,
   DensityResponse,
   DeviceStatusResponse,
@@ -35,7 +39,32 @@ const initialRequest: DensityRequest = {
   apply_to_device: true,
   include_bins: true,
   window: "hann",
+  aaronia_span_mode: "auto",
 };
+
+const aaroniaSpanModes: AaroniaSpanMode[] = [
+  "auto",
+  "full",
+  "1/2",
+  "1/4",
+  "1/8",
+  "1/16",
+  "1/32",
+  "1/64",
+  "1/128",
+  "1/256",
+  "1/512",
+];
+
+const initialConductedForm = {
+  thresholdDb: 6,
+  attenuationDb: 60,
+  targetFrequencyFromHz: "",
+  targetFrequencyToHz: "",
+  topBinsLimit: 10,
+};
+
+type ConductedForm = typeof initialConductedForm;
 
 type HelpSection = {
   title: string;
@@ -56,6 +85,17 @@ export default function App() {
   const [comparisonId, setComparisonId] = useState<string>("");
   const [baseline, setBaseline] = useState<MeasurementStored | null>(null);
   const [comparison, setComparison] = useState<MeasurementStored | null>(null);
+  const [conductedBaselineId, setConductedBaselineId] = useState<string>("");
+  const [conductedJammerAId, setConductedJammerAId] = useState<string>("");
+  const [conductedJammerBId, setConductedJammerBId] = useState<string>("");
+  const [conductedBaseline, setConductedBaseline] = useState<MeasurementStored | null>(null);
+  const [conductedJammerA, setConductedJammerA] = useState<MeasurementStored | null>(null);
+  const [conductedJammerB, setConductedJammerB] = useState<MeasurementStored | null>(null);
+  const [conductedForm, setConductedForm] = useState<ConductedForm>(initialConductedForm);
+  const [conductedResult, setConductedResult] =
+    useState<ConductedJammerComparisonResponse | null>(null);
+  const [conductedError, setConductedError] = useState<string | null>(null);
+  const [conductedLoading, setConductedLoading] = useState(false);
   const [aiExplanation, setAiExplanation] = useState<AIComparisonResponse | null>(null);
   const [aiExplanationError, setAiExplanationError] = useState<string | null>(null);
   const [aiExplanationLoading, setAiExplanationLoading] = useState(false);
@@ -93,9 +133,26 @@ export default function App() {
   }, [comparisonId]);
 
   useEffect(() => {
+    void loadSelectedMeasurement(conductedBaselineId, setConductedBaseline);
+  }, [conductedBaselineId]);
+
+  useEffect(() => {
+    void loadSelectedMeasurement(conductedJammerAId, setConductedJammerA);
+  }, [conductedJammerAId]);
+
+  useEffect(() => {
+    void loadSelectedMeasurement(conductedJammerBId, setConductedJammerB);
+  }, [conductedJammerBId]);
+
+  useEffect(() => {
     setAiExplanation(null);
     setAiExplanationError(null);
   }, [baselineId, comparisonId]);
+
+  useEffect(() => {
+    setConductedResult(null);
+    setConductedError(null);
+  }, [conductedBaselineId, conductedJammerAId, conductedJammerBId]);
 
   useEffect(() => {
     if (!helpOpen) {
@@ -244,6 +301,15 @@ export default function App() {
       if (comparisonId === id) {
         setComparisonId("");
       }
+      if (conductedBaselineId === id) {
+        setConductedBaselineId("");
+      }
+      if (conductedJammerAId === id) {
+        setConductedJammerAId("");
+      }
+      if (conductedJammerBId === id) {
+        setConductedJammerBId("");
+      }
     } catch (requestError) {
       setStorageNotice(
         requestError instanceof Error ? requestError.message : t("errors.deleteSnapshotFailed"),
@@ -271,6 +337,59 @@ export default function App() {
       );
     } finally {
       event.target.value = "";
+    }
+  }
+
+  async function handleAnalyzeConductedComparison() {
+    if (!conductedBaseline || !conductedJammerA || !conductedJammerB) {
+      setConductedError(t("conducted.selectThree"));
+      return;
+    }
+
+    let targetFrequencyFromHz: number | null;
+    let targetFrequencyToHz: number | null;
+    try {
+      targetFrequencyFromHz = parseOptionalNumber(conductedForm.targetFrequencyFromHz);
+      targetFrequencyToHz = parseOptionalNumber(conductedForm.targetFrequencyToHz);
+    } catch {
+      setConductedError(t("conducted.invalidNumber"));
+      return;
+    }
+
+    if (
+      targetFrequencyFromHz !== null &&
+      targetFrequencyToHz !== null &&
+      targetFrequencyToHz <= targetFrequencyFromHz
+    ) {
+      setConductedError(t("conducted.invalidTargetRange"));
+      return;
+    }
+
+    setConductedLoading(true);
+    setConductedError(null);
+    setConductedResult(null);
+    try {
+      const data = await compareConductedJammers({
+        baseline_name: conductedBaseline.name,
+        jammer_a_name: conductedJammerA.name,
+        jammer_b_name: conductedJammerB.name,
+        response_language: i18n.resolvedLanguage === "uk" ? "uk" : "en",
+        threshold_db: conductedForm.thresholdDb,
+        attenuation_db: conductedForm.attenuationDb,
+        target_frequency_from_hz: targetFrequencyFromHz,
+        target_frequency_to_hz: targetFrequencyToHz,
+        top_bins_limit: Math.trunc(conductedForm.topBinsLimit),
+        baseline: conductedBaseline.result,
+        jammer_a: conductedJammerA.result,
+        jammer_b: conductedJammerB.result,
+      });
+      setConductedResult(data);
+    } catch (requestError) {
+      setConductedError(
+        requestError instanceof Error ? requestError.message : t("conducted.analysisFailed"),
+      );
+    } finally {
+      setConductedLoading(false);
     }
   }
 
@@ -443,6 +562,25 @@ export default function App() {
             </select>
           </label>
 
+          <label>
+            {t("form.aaroniaSpan")}
+            <select
+              value={form.aaronia_span_mode}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  aaronia_span_mode: event.target.value as AaroniaSpanMode,
+                }))
+              }
+            >
+              {aaroniaSpanModes.map((mode) => (
+                <option key={mode} value={mode}>
+                  {t(`aaroniaSpan.${mode.replace("/", "_")}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <label className="inline-control">
             <input
               type="checkbox"
@@ -480,6 +618,22 @@ export default function App() {
           {error ? <div className="error-box">{error}</div> : null}
 
           <DeviceStatusPanel status={deviceStatus} />
+
+          <ConductedComparisonPanel
+            measurements={measurements}
+            baselineId={conductedBaselineId}
+            jammerAId={conductedJammerAId}
+            jammerBId={conductedJammerBId}
+            form={conductedForm}
+            result={conductedResult}
+            error={conductedError}
+            loading={conductedLoading}
+            onBaselineChange={setConductedBaselineId}
+            onJammerAChange={setConductedJammerAId}
+            onJammerBChange={setConductedJammerBId}
+            onFormChange={setConductedForm}
+            onAnalyze={handleAnalyzeConductedComparison}
+          />
 
           {!result ? (
             <div className="empty-state">
@@ -833,6 +987,287 @@ function ComparisonPanel({
   );
 }
 
+function ConductedComparisonPanel({
+  measurements,
+  baselineId,
+  jammerAId,
+  jammerBId,
+  form,
+  result,
+  error,
+  loading,
+  onBaselineChange,
+  onJammerAChange,
+  onJammerBChange,
+  onFormChange,
+  onAnalyze,
+}: {
+  measurements: MeasurementSummary[];
+  baselineId: string;
+  jammerAId: string;
+  jammerBId: string;
+  form: ConductedForm;
+  result: ConductedJammerComparisonResponse | null;
+  error: string | null;
+  loading: boolean;
+  onBaselineChange: (id: string) => void;
+  onJammerAChange: (id: string) => void;
+  onJammerBChange: (id: string) => void;
+  onFormChange: (form: ConductedForm) => void;
+  onAnalyze: () => void;
+}) {
+  const { t } = useTranslation();
+  const canAnalyze = Boolean(baselineId && jammerAId && jammerBId) && !loading;
+
+  return (
+    <section className="settings-panel compact">
+      <h2>{t("conducted.title")}</h2>
+      <div className="warning-box">
+        <strong>{t("conducted.safetyTitle")}</strong>
+        <span>{t("conducted.safetyLine1")}</span>
+        <span>{t("conducted.safetyLine2")}</span>
+        <span>{t("conducted.safetyLine3")}</span>
+      </div>
+
+      {measurements.length === 0 ? (
+        <p className="helper-text">{t("comparison.empty")}</p>
+      ) : (
+        <>
+          <div className="conducted-controls">
+            <label>
+              {t("conducted.baseline")}
+              <select value={baselineId} onChange={(event) => onBaselineChange(event.target.value)}>
+                <option value="">{t("comparison.chooseSnapshot")}</option>
+                {measurements.map((measurement) => (
+                  <option key={measurement.id} value={measurement.id}>
+                    {measurement.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t("conducted.jammerA")}
+              <select value={jammerAId} onChange={(event) => onJammerAChange(event.target.value)}>
+                <option value="">{t("comparison.chooseSnapshot")}</option>
+                {measurements.map((measurement) => (
+                  <option key={measurement.id} value={measurement.id}>
+                    {measurement.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t("conducted.jammerB")}
+              <select value={jammerBId} onChange={(event) => onJammerBChange(event.target.value)}>
+                <option value="">{t("comparison.chooseSnapshot")}</option>
+                {measurements.map((measurement) => (
+                  <option key={measurement.id} value={measurement.id}>
+                    {measurement.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="conducted-fields">
+            <label>
+              {t("conducted.thresholdDb")}
+              <input
+                min="0"
+                step="0.5"
+                type="number"
+                value={form.thresholdDb}
+                onChange={(event) =>
+                  onFormChange({ ...form, thresholdDb: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label>
+              {t("conducted.attenuationDb")}
+              <input
+                min="0"
+                step="1"
+                type="number"
+                value={form.attenuationDb}
+                onChange={(event) =>
+                  onFormChange({ ...form, attenuationDb: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label>
+              {t("conducted.targetFrom")}
+              <input
+                min="1"
+                placeholder={t("conducted.overlapPlaceholder")}
+                step="1"
+                type="number"
+                value={form.targetFrequencyFromHz}
+                onChange={(event) =>
+                  onFormChange({ ...form, targetFrequencyFromHz: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              {t("conducted.targetTo")}
+              <input
+                min="1"
+                placeholder={t("conducted.overlapPlaceholder")}
+                step="1"
+                type="number"
+                value={form.targetFrequencyToHz}
+                onChange={(event) =>
+                  onFormChange({ ...form, targetFrequencyToHz: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              {t("conducted.topBins")}
+              <input
+                min="0"
+                max="100"
+                step="1"
+                type="number"
+                value={form.topBinsLimit}
+                onChange={(event) =>
+                  onFormChange({ ...form, topBinsLimit: Number(event.target.value) })
+                }
+              />
+            </label>
+          </div>
+
+          <div className="action-row">
+            <button disabled={!canAnalyze} type="button" onClick={onAnalyze}>
+              {loading ? t("conducted.analyzing") : t("conducted.analyze")}
+            </button>
+          </div>
+          {!canAnalyze ? <p className="helper-text">{t("conducted.selectThree")}</p> : null}
+          {error ? <p className="ai-error">{error}</p> : null}
+          {result ? <ConductedResultPanel result={result} /> : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+function ConductedResultPanel({ result }: { result: ConductedJammerComparisonResponse }) {
+  const { t } = useTranslation();
+  const rows = conductedMetricRows(result, t);
+
+  return (
+    <div className="conducted-result">
+      <div className="conducted-summary">
+        <p>
+          <strong>{t("conducted.winner")}</strong>{" "}
+          {conductedWinnerLabel(result.winner, result.winner_name, t)}
+        </p>
+        <p>
+          <strong>{t("conducted.analysisQuality")}</strong>{" "}
+          {t(`conducted.quality.${result.analysis_quality}`)}
+        </p>
+        {result.compared_frequency_from_hz !== null &&
+        result.compared_frequency_to_hz !== null &&
+        result.bin_width_hz !== null ? (
+          <p>
+            <strong>{t("conducted.comparedRange")}</strong>{" "}
+            {formatFrequencySmart(result.compared_frequency_from_hz)}-
+            {formatFrequencySmart(result.compared_frequency_to_hz)}; {t("metrics.binWidth")}:{" "}
+            {formatFrequencySmart(result.bin_width_hz)}
+          </p>
+        ) : null}
+        <p>{result.summary}</p>
+        <p className="helper-text">{result.numeric_basis}</p>
+      </div>
+
+      {result.warnings.length > 0 ? (
+        <div className="warning-box compact-warning">
+          <strong>{t("conducted.warnings")}</strong>
+          <ul>
+            {result.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="compare-table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>{t("comparison.metric")}</th>
+              <th>{result.jammer_a_name}</th>
+              <th>{result.jammer_b_name}</th>
+              <th>{t("conducted.metricWinner")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label}>
+                <td>{row.label}</td>
+                <td>{row.jammerA}</td>
+                <td>{row.jammerB}</td>
+                <td>{row.winner}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="conducted-top-bins">
+        <ConductedTopBins
+          bins={result.jammer_a.top_raised_bins}
+          title={t("conducted.topRaisedFor", { name: result.jammer_a_name })}
+        />
+        <ConductedTopBins
+          bins={result.jammer_b.top_raised_bins}
+          title={t("conducted.topRaisedFor", { name: result.jammer_b_name })}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ConductedTopBins({
+  title,
+  bins,
+}: {
+  title: string;
+  bins: ConductedJammerComparisonResponse["jammer_a"]["top_raised_bins"];
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="top-bin-table">
+      <h3>{title}</h3>
+      {bins.length === 0 ? (
+        <p className="helper-text">{t("conducted.noRaisedBins")}</p>
+      ) : (
+        <div className="compare-table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>{t("table.frequencyHz")}</th>
+                <th>{t("conducted.baselineDensity")}</th>
+                <th>{t("conducted.jammerDensity")}</th>
+                <th>{t("conducted.deltaDb")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bins.map((bin) => (
+                <tr key={`${title}-${bin.frequency_hz}`}>
+                  <td>{formatFrequencySmart(bin.frequency_hz)}</td>
+                  <td>{formatDbPerHz(bin.baseline_density_db_per_hz)}</td>
+                  <td>{formatDbPerHz(bin.jammer_density_db_per_hz)}</td>
+                  <td>{formatDb(bin.delta_db)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AIComparisonPanel({
   explanation,
   error,
@@ -1124,6 +1559,10 @@ function CaptureSettingsPanel({ settings }: { settings: CaptureSettings }) {
               : `${settings.reference_level_dbm} dBm`
           }
         />
+        <InfoItem
+          label={t("form.aaroniaSpan")}
+          value={aaroniaSpanLabel(settings.aaronia_span_mode, t)}
+        />
       </div>
     </section>
   );
@@ -1172,6 +1611,20 @@ function formatHz(value: number) {
   return new Intl.NumberFormat(currentLocale(), {
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatFrequencySmart(value: number) {
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000_000) {
+    return `${formatCompactNumber(value / 1_000_000_000)} GHz`;
+  }
+  if (absolute >= 1_000_000) {
+    return `${formatCompactNumber(value / 1_000_000)} MHz`;
+  }
+  if (absolute >= 1_000) {
+    return `${formatCompactNumber(value / 1_000)} kHz`;
+  }
+  return `${formatHz(value)} Hz`;
 }
 
 function formatDb(value: number) {
@@ -1409,6 +1862,18 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function parseOptionalNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error("Invalid number");
+  }
+  return parsed;
+}
+
 function assessmentLabel(label: DensityResponse["range_assessment"]["label"], t: TFunction) {
   return t(`assessment.${label}`);
 }
@@ -1421,4 +1886,118 @@ function comparisonWinnerLabel(explanation: AIComparisonResponse, t: TFunction) 
     return t("ai.unclear");
   }
   return t("ai.denser", { name: explanation.winner_name });
+}
+
+function aaroniaSpanLabel(mode: AaroniaSpanMode | undefined, t: TFunction) {
+  const safeMode = mode ?? "auto";
+  return t(`aaroniaSpan.${safeMode.replace("/", "_")}`);
+}
+
+function conductedWinnerLabel(
+  winner: ConductedJammerWinner,
+  winnerName: string,
+  t: TFunction,
+) {
+  if (winner === "tie") {
+    return t("conducted.winnerTie");
+  }
+  if (winner === "unclear") {
+    return t("conducted.winnerUnclear");
+  }
+  return t("conducted.winnerNamed", { name: winnerName });
+}
+
+function conductedMetricRows(result: ConductedJammerComparisonResponse, t: TFunction) {
+  const jammerA = result.jammer_a;
+  const jammerB = result.jammer_b;
+  const valueWinner = (valueA: number, valueB: number, tolerance = 1e-9) =>
+    conductedMetricWinner(valueA, valueB, tolerance, t);
+
+  return [
+    {
+      label: t("conducted.metrics.raisedRange"),
+      jammerA: `${formatCompactNumber(jammerA.raised_percent)}%`,
+      jammerB: `${formatCompactNumber(jammerB.raised_percent)}%`,
+      winner: valueWinner(jammerA.raised_percent, jammerB.raised_percent),
+    },
+    {
+      label: t("conducted.metrics.raisedBandwidth"),
+      jammerA: formatFrequencySmart(jammerA.raised_bandwidth_hz),
+      jammerB: formatFrequencySmart(jammerB.raised_bandwidth_hz),
+      winner: valueWinner(jammerA.raised_bandwidth_hz, jammerB.raised_bandwidth_hz),
+    },
+    {
+      label: t("conducted.metrics.meanDelta"),
+      jammerA: formatSignedDb(jammerA.mean_delta_db),
+      jammerB: formatSignedDb(jammerB.mean_delta_db),
+      winner: valueWinner(jammerA.mean_delta_db, jammerB.mean_delta_db),
+    },
+    {
+      label: t("conducted.metrics.medianDelta"),
+      jammerA: formatSignedDb(jammerA.median_delta_db),
+      jammerB: formatSignedDb(jammerB.median_delta_db),
+      winner: valueWinner(jammerA.median_delta_db, jammerB.median_delta_db),
+    },
+    {
+      label: t("conducted.metrics.p90Delta"),
+      jammerA: formatSignedDb(jammerA.p90_delta_db),
+      jammerB: formatSignedDb(jammerB.p90_delta_db),
+      winner: valueWinner(jammerA.p90_delta_db, jammerB.p90_delta_db),
+    },
+    {
+      label: t("conducted.metrics.maxDelta"),
+      jammerA: formatSignedDb(jammerA.max_delta_db),
+      jammerB: formatSignedDb(jammerB.max_delta_db),
+      winner: valueWinner(jammerA.max_delta_db, jammerB.max_delta_db),
+    },
+    {
+      label: t("conducted.metrics.noiseFloorDelta"),
+      jammerA: formatSignedDb(jammerA.noise_floor_delta_db),
+      jammerB: formatSignedDb(jammerB.noise_floor_delta_db),
+      winner: valueWinner(jammerA.noise_floor_delta_db, jammerB.noise_floor_delta_db),
+    },
+    {
+      label: t("conducted.metrics.integratedPowerDelta"),
+      jammerA: formatSignedDb(jammerA.integrated_power_delta_db),
+      jammerB: formatSignedDb(jammerB.integrated_power_delta_db),
+      winner: valueWinner(jammerA.integrated_power_delta_db, jammerB.integrated_power_delta_db),
+    },
+    {
+      label: t("conducted.metrics.correctedIntegratedPower"),
+      jammerA: formatDb(jammerA.corrected_integrated_power_db),
+      jammerB: formatDb(jammerB.corrected_integrated_power_db),
+      winner: valueWinner(
+        jammerA.corrected_integrated_power_db,
+        jammerB.corrected_integrated_power_db,
+      ),
+    },
+    {
+      label: t("conducted.metrics.peakDeltaFrequency"),
+      jammerA:
+        jammerA.peak_delta_frequency_hz === null
+          ? "-"
+          : formatFrequencySmart(jammerA.peak_delta_frequency_hz),
+      jammerB:
+        jammerB.peak_delta_frequency_hz === null
+          ? "-"
+          : formatFrequencySmart(jammerB.peak_delta_frequency_hz),
+      winner: "-",
+    },
+  ];
+}
+
+function formatSignedDb(value: number) {
+  return `${signed(value)} dB`;
+}
+
+function conductedMetricWinner(
+  valueA: number,
+  valueB: number,
+  tolerance: number,
+  t: TFunction,
+) {
+  if (Math.abs(valueA - valueB) <= tolerance) {
+    return t("conducted.tieShort");
+  }
+  return valueA > valueB ? t("conducted.shortA") : t("conducted.shortB");
 }

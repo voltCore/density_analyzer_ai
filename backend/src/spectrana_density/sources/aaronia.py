@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 
 from spectrana_density.config import Settings
 from spectrana_density.schemas import (
+    AaroniaSpanMode,
     DensityRequest,
     DeviceSetting,
     DeviceStatusResponse,
@@ -20,6 +21,19 @@ from spectrana_density.signal.density import DensityComputation, StreamingDensit
 from spectrana_density.sources.base import IQCapture
 
 FRAME_SEPARATOR = b"\x1e"
+SPAN_MODE_DIVISORS: dict[AaroniaSpanMode, int] = {
+    "auto": 0,
+    "full": 1,
+    "1/2": 2,
+    "1/4": 4,
+    "1/8": 8,
+    "1/16": 16,
+    "1/32": 32,
+    "1/64": 64,
+    "1/128": 128,
+    "1/256": 256,
+    "1/512": 512,
+}
 
 
 @dataclass(frozen=True)
@@ -51,6 +65,8 @@ class AaroniaStreamCapture:
     first_header: dict[str, Any]
     frequency_from_hz: float
     frequency_to_hz: float
+    stream_frequency_from_hz: float
+    stream_frequency_to_hz: float
     unit: str
     elapsed_seconds: float
 
@@ -133,7 +149,9 @@ class AaroniaIQSource:
 
         stream_capture = await self._read_capture(request)
         first_header = stream_capture.first_header
-        sample_rate_hz = stream_capture.frequency_to_hz - stream_capture.frequency_from_hz
+        sample_rate_hz = (
+            stream_capture.stream_frequency_to_hz - stream_capture.stream_frequency_from_hz
+        )
 
         return IQCapture(
             samples=np.empty(0, dtype=np.complex128),
@@ -148,6 +166,19 @@ class AaroniaIQSource:
             metadata={
                 "stream_url": self._settings.aaronia_stream_url,
                 "control_url": self._settings.aaronia_control_url,
+                "aaronia_span_mode": request.aaronia_span_mode,
+                "requested_frequency_from_hz": request.frequency_from_hz,
+                "requested_frequency_to_hz": request.frequency_to_hz,
+                "actual_stream_frequency_from_hz": stream_capture.stream_frequency_from_hz,
+                "actual_stream_frequency_to_hz": stream_capture.stream_frequency_to_hz,
+                "actual_stream_span_hz": (
+                    stream_capture.stream_frequency_to_hz
+                    - stream_capture.stream_frequency_from_hz
+                ),
+                "cropped_to_requested_range": (
+                    stream_capture.frequency_from_hz != stream_capture.stream_frequency_from_hz
+                    or stream_capture.frequency_to_hz != stream_capture.stream_frequency_to_hz
+                ),
                 "first_packet_num": first_header.get("num"),
                 "first_packet_size": first_header.get("size"),
                 "first_packet_sample_size": first_header.get("sampleSize"),
@@ -159,21 +190,20 @@ class AaroniaIQSource:
         )
 
     async def _configure_device(self, request: DensityRequest) -> None:
-        payload: dict[str, str | int | float | bool] = {
-            "type": "capture",
-            "frequencyStart": request.frequency_from_hz,
-            "frequencyEnd": request.frequency_to_hz,
-            "frequencyCenter": request.center_frequency_hz,
-            "frequencySpan": request.span_hz,
-            "frequencyBins": request.bins,
-        }
-        if request.reference_level_dbm is not None:
-            payload["referenceLevel"] = request.reference_level_dbm
-        if self._settings.aaronia_receiver_name:
-            payload["receiver"] = self._settings.aaronia_receiver_name
-
         timeout = httpx.Timeout(self._settings.request_timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout) as client:
+            control_span_hz = await _control_span_hz(client, self._settings, request)
+            payload: dict[str, str | int | float | bool] = {
+                "type": "capture",
+                "frequencyCenter": request.center_frequency_hz,
+                "frequencySpan": control_span_hz,
+                "frequencyBins": request.bins,
+            }
+            if request.reference_level_dbm is not None:
+                payload["referenceLevel"] = request.reference_level_dbm
+            if self._settings.aaronia_receiver_name:
+                payload["receiver"] = self._settings.aaronia_receiver_name
+
             try:
                 response = await client.request(
                     self._settings.aaronia_control_method,
@@ -204,6 +234,7 @@ class AaroniaIQSource:
         sample_count = 0
         started_at = time.monotonic()
         deadline = started_at + request.capture_seconds
+        settle_deadline = started_at + 5.0
         timeout = httpx.Timeout(
             connect=self._settings.stream_connect_timeout_seconds,
             read=self._settings.stream_read_timeout_seconds,
@@ -220,9 +251,32 @@ class AaroniaIQSource:
                 async for chunk in response.aiter_bytes():
                     for frame in parser.feed(chunk):
                         if first_header is None:
+                            frame_frequency_from_hz = (
+                                frame.frequency_from_hz or request.frequency_from_hz
+                            )
+                            frame_frequency_to_hz = (
+                                frame.frequency_to_hz or request.frequency_to_hz
+                            )
+                            if not _range_covers_requested(
+                                frame_frequency_from_hz,
+                                frame_frequency_to_hz,
+                                request,
+                            ):
+                                if time.monotonic() < settle_deadline:
+                                    continue
+                                msg = (
+                                    "Aaronia IQ stream did not update to a range that covers "
+                                    "the requested band after device configuration: "
+                                    f"requested {request.frequency_from_hz:.3f}-"
+                                    f"{request.frequency_to_hz:.3f} Hz, "
+                                    f"stream {frame_frequency_from_hz:.3f}-"
+                                    f"{frame_frequency_to_hz:.3f} Hz"
+                                )
+                                raise RuntimeError(msg)
+
                             first_header = frame.header
-                            frequency_from_hz = frame.frequency_from_hz or request.frequency_from_hz
-                            frequency_to_hz = frame.frequency_to_hz or request.frequency_to_hz
+                            frequency_from_hz = frame_frequency_from_hz
+                            frequency_to_hz = frame_frequency_to_hz
                             unit = frame.unit
                             accumulator = StreamingDensityAccumulator(
                                 frequency_from_hz=frequency_from_hz,
@@ -252,13 +306,24 @@ class AaroniaIQSource:
             msg = "Aaronia stream did not return any IQ frames"
             raise RuntimeError(msg)
 
+        stream_density = accumulator.finish()
+        density, analysis_frequency_from_hz, analysis_frequency_to_hz = (
+            _crop_density_to_requested_range(
+                stream_density,
+                frequency_from_hz=request.frequency_from_hz,
+                frequency_to_hz=request.frequency_to_hz,
+            )
+        )
+
         return AaroniaStreamCapture(
-            density=accumulator.finish(),
+            density=density,
             sample_count=sample_count,
             packet_count=packet_count,
             first_header=first_header,
-            frequency_from_hz=frequency_from_hz,
-            frequency_to_hz=frequency_to_hz,
+            frequency_from_hz=analysis_frequency_from_hz,
+            frequency_to_hz=analysis_frequency_to_hz,
+            stream_frequency_from_hz=frequency_from_hz,
+            stream_frequency_to_hz=frequency_to_hz,
             unit=unit,
             elapsed_seconds=time.monotonic() - started_at,
         )
@@ -344,6 +409,60 @@ def mock_device_status(settings: Settings) -> DeviceStatusResponse:
     )
 
 
+async def _control_span_hz(
+    client: httpx.AsyncClient,
+    settings: Settings,
+    request: DensityRequest,
+) -> float:
+    if request.aaronia_span_mode == "auto":
+        # RTSA maps requested span to discrete decimation values. Ask for a wider
+        # control span so the actual IQ stream covers the user's requested band;
+        # _read_capture then crops the PSD back to the requested range.
+        return request.span_hz * 1.5
+
+    full_span_hz = await _estimate_full_span_hz(client, settings.aaronia_stream_url)
+    selected_span_hz = full_span_hz / SPAN_MODE_DIVISORS[request.aaronia_span_mode]
+    tolerance_hz = selected_span_hz / max(request.bins, 1)
+    if selected_span_hz < request.span_hz - tolerance_hz:
+        msg = (
+            f"Selected Aaronia span {request.aaronia_span_mode} "
+            f"({selected_span_hz:.3f} Hz) is narrower than the requested range "
+            f"({request.span_hz:.3f} Hz). Choose a wider span."
+        )
+        raise RuntimeError(msg)
+    return selected_span_hz
+
+
+async def _estimate_full_span_hz(client: httpx.AsyncClient, stream_url: str) -> float:
+    remote_config = await _get_json(client, _endpoint(stream_url, "/remoteconfig"))
+    decimation_index = _current_decimation_index(remote_config)
+    stream_header = await _read_stream_header(client, stream_url)
+    stream_start_hz = _float_or_none(stream_header.get("startFrequency"))
+    stream_end_hz = _float_or_none(stream_header.get("endFrequency"))
+    if stream_start_hz is None or stream_end_hz is None or stream_end_hz <= stream_start_hz:
+        msg = "Aaronia stream header does not contain a valid frequency range."
+        raise RuntimeError(msg)
+    return (stream_end_hz - stream_start_hz) * (2**decimation_index)
+
+
+def _current_decimation_index(remote_config: Mapping[str, Any]) -> int:
+    items = list(_walk_config(remote_config.get("config", remote_config)))
+    candidates = [item for item in items if item["name"] == "decimation"]
+    if not candidates:
+        msg = "Aaronia remoteconfig does not expose the Span/decimation setting."
+        raise RuntimeError(msg)
+    item = _prefer_spectran_item(candidates)
+    value = item.get("value")
+    if not isinstance(value, int | float):
+        msg = "Aaronia Span/decimation setting is not numeric."
+        raise RuntimeError(msg)
+    decimation_index = int(value)
+    if decimation_index < 0:
+        msg = "Aaronia Span/decimation setting is invalid."
+        raise RuntimeError(msg)
+    return decimation_index
+
+
 def _payload_length_bytes(header: dict[str, Any], sample_format: str) -> int:
     size = header.get("size")
     if size is not None and int(size) > 0:
@@ -389,6 +508,102 @@ def _decode_payload_values(payload: bytes, sample_format: str) -> NDArray[np.flo
         case _:
             msg = f"Unsupported Aaronia IQ stream format={sample_format}"
             raise ValueError(msg)
+
+
+def _crop_density_to_requested_range(
+    density: DensityComputation,
+    *,
+    frequency_from_hz: float,
+    frequency_to_hz: float,
+) -> tuple[DensityComputation, float, float]:
+    frequencies = density.frequencies_hz
+    if frequencies.size == 0:
+        msg = "Aaronia stream did not produce density bins"
+        raise RuntimeError(msg)
+
+    stream_frequency_from_hz = float(frequencies[0] - density.bin_width_hz / 2)
+    stream_frequency_to_hz = float(frequencies[-1] + density.bin_width_hz / 2)
+    tolerance_hz = density.bin_width_hz / 2
+    if stream_frequency_from_hz > frequency_from_hz + tolerance_hz or (
+        stream_frequency_to_hz < frequency_to_hz - tolerance_hz
+    ):
+        msg = (
+            "Requested frequency range is not fully covered by the Aaronia IQ stream: "
+            f"requested {frequency_from_hz:.3f}-{frequency_to_hz:.3f} Hz, "
+            f"stream {stream_frequency_from_hz:.3f}-{stream_frequency_to_hz:.3f} Hz"
+        )
+        raise RuntimeError(msg)
+
+    if (
+        abs(frequency_from_hz - stream_frequency_from_hz) <= tolerance_hz
+        and abs(frequency_to_hz - stream_frequency_to_hz) <= tolerance_hz
+    ):
+        return density, stream_frequency_from_hz, stream_frequency_to_hz
+
+    mask = (frequencies >= frequency_from_hz) & (frequencies <= frequency_to_hz)
+    if not np.any(mask):
+        msg = (
+            "Requested frequency range is outside the Aaronia IQ stream range: "
+            f"requested {frequency_from_hz:.3f}-{frequency_to_hz:.3f} Hz, "
+            f"stream {stream_frequency_from_hz:.3f}-{stream_frequency_to_hz:.3f} Hz"
+        )
+        raise RuntimeError(msg)
+
+    cropped_frequencies = frequencies[mask].astype(np.float64, copy=False)
+    cropped_density_linear = density.density_linear[mask].astype(np.float64, copy=False)
+    cropped_density_db = density.density_db_per_hz[mask].astype(np.float64, copy=False)
+    cropped_power_linear = density.power_linear[mask].astype(np.float64, copy=False)
+    cropped_power_db = density.power_db[mask].astype(np.float64, copy=False)
+    peak_index = int(np.argmax(cropped_density_linear))
+    mean_density_linear = float(np.mean(cropped_density_linear))
+    peak_density_linear = float(cropped_density_linear[peak_index])
+    integrated_power_linear = float(np.sum(cropped_power_linear))
+    analysis_frequency_from_hz = max(
+        frequency_from_hz,
+        float(cropped_frequencies[0] - density.bin_width_hz / 2),
+    )
+    analysis_frequency_to_hz = min(
+        frequency_to_hz,
+        float(cropped_frequencies[-1] + density.bin_width_hz / 2),
+    )
+
+    return (
+        DensityComputation(
+            frequencies_hz=cropped_frequencies,
+            density_linear=cropped_density_linear,
+            density_db_per_hz=cropped_density_db,
+            power_linear=cropped_power_linear,
+            power_db=cropped_power_db,
+            bin_width_hz=density.bin_width_hz,
+            averaged_segments=density.averaged_segments,
+            mean_density_linear=mean_density_linear,
+            mean_density_db_per_hz=_to_db_scalar(mean_density_linear),
+            peak_density_linear=peak_density_linear,
+            peak_density_db_per_hz=float(cropped_density_db[peak_index]),
+            peak_frequency_hz=float(cropped_frequencies[peak_index]),
+            integrated_power_linear=integrated_power_linear,
+            integrated_power_db=_to_db_scalar(integrated_power_linear),
+        ),
+        analysis_frequency_from_hz,
+        analysis_frequency_to_hz,
+    )
+
+
+def _range_covers_requested(
+    frequency_from_hz: float,
+    frequency_to_hz: float,
+    request: DensityRequest,
+) -> bool:
+    bin_width_hz = (frequency_to_hz - frequency_from_hz) / request.bins
+    tolerance_hz = bin_width_hz / 2
+    return (
+        frequency_from_hz <= request.frequency_from_hz + tolerance_hz
+        and frequency_to_hz >= request.frequency_to_hz - tolerance_hz
+    )
+
+
+def _to_db_scalar(value: float) -> float:
+    return float(10 * np.log10(max(value, 1e-30)))
 
 
 def _value_size_bytes(sample_format: str) -> int:

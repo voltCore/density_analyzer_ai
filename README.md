@@ -127,7 +127,8 @@ Returns default values for the frontend form.
   "occupancy_threshold_db": 6,
   "apply_to_device": true,
   "include_bins": true,
-  "window": "hann"
+  "window": "hann",
+  "aaronia_span_mode": "auto"
 }
 ```
 
@@ -138,6 +139,12 @@ The response contains `summary` and a `bins` array with:
 - `density_db_per_hz`
 - `power_linear`
 - `power_db`
+
+`aaronia_span_mode` controls the span sent to RTSA Suite PRO when `SOURCE_MODE=aaronia`.
+Use `auto` to let the backend request a stream wide enough to cover the selected range, or
+choose an explicit RTSA span value such as `full`, `1/2`, `1/4`, `1/8`, and so on. The backend
+still validates that the actual IQ stream covers the requested range and crops the PSD to the
+range entered in the form.
 
 ## Export And Comparison
 
@@ -193,6 +200,50 @@ AI_TIMEOUT_SECONDS=90
 ```
 
 If there is no key or internet access, the AI explanation is not generated and the frontend shows the error reason. Numerical table comparison still works without AI.
+
+## Conducted Jammer Comparison
+
+The `Conducted Jammer Comparison` block compares three saved snapshots:
+
+- baseline: conducted setup without the active jammer, preferably 50 Ohm terminated;
+- Jammer A: first RF source through the same attenuator chain;
+- Jammer B: second RF source through the same attenuator chain.
+
+This mode is only for conducted RF measurement:
+
+```text
+Jammer -> high-power attenuator -> optional limiter / DC block -> Aaronia
+```
+
+Do not connect an RF output directly to Aaronia. Check Aaronia max input power and the
+attenuator power rating before measurement.
+
+Backend endpoint:
+
+- `POST /api/jammer/compare-conducted`
+
+Request fields:
+
+- `threshold_db`: bin is raised when jammer PSD is at least this many dB above baseline.
+- `attenuation_db`: total attenuation of the conducted measurement chain.
+- `target_frequency_from_hz` / `target_frequency_to_hz`: optional target band. If omitted,
+  the backend uses the shared frequency overlap between all three snapshots.
+- `top_bins_limit`: number of strongest raised bins to return for each jammer.
+
+For each jammer, the backend calculates bin deltas against baseline, raised percentage,
+raised bandwidth, mean/median/P90/max deltas, noise floor delta, integrated power delta,
+attenuation-corrected integrated power, peak delta frequency, and top raised bins.
+
+Winner logic is deterministic and transparent. The backend first compares
+`integrated_power_delta_db`; if the difference is below 1.5 dB, it falls back to
+`raised_percent` with a 5 percentage point threshold, then `mean_delta_db` and
+`p90_delta_db` with 1.5 dB thresholds. If none of those differences is significant, the
+result is `tie`. If the snapshots have no compatible overlap or no bin rows, the result is
+`unclear` and warnings explain why.
+
+The conclusion applies only to the conducted cable measurement through the configured
+attenuator chain. It does not estimate free-space range, antenna efficiency, polarization,
+or real-world effectiveness against any specific platform.
 
 ## In-App Help
 

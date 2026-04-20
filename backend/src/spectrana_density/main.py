@@ -13,6 +13,8 @@ from spectrana_density.schemas import (
     AIComparisonResponse,
     BinDensity,
     CaptureSettings,
+    ConductedJammerComparisonRequest,
+    ConductedJammerComparisonResponse,
     DensityRequest,
     DensityResponse,
     DensitySummary,
@@ -23,6 +25,7 @@ from spectrana_density.schemas import (
     RangeAssessment,
     SettingsResponse,
 )
+from spectrana_density.signal.conducted_jammer import compare_conducted_jammers
 from spectrana_density.signal.density import assess_range_density, compute_density
 from spectrana_density.sources.aaronia import mock_device_status, read_aaronia_device_status
 from spectrana_density.sources.factory import create_source
@@ -103,6 +106,12 @@ def create_app() -> FastAPI:
         except AIComparisonUnavailableError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    @app.post("/api/jammer/compare-conducted")
+    async def compare_conducted_jammer_snapshots(
+        payload: ConductedJammerComparisonRequest,
+    ) -> ConductedJammerComparisonResponse:
+        return compare_conducted_jammers(payload)
+
     @app.post("/api/density")
     async def calculate_density(
         request: DensityRequest,
@@ -131,6 +140,7 @@ def create_app() -> FastAPI:
         sample_count = (
             capture.sample_count if capture.sample_count is not None else int(capture.samples.size)
         )
+        bin_count = int(result.frequencies_hz.size)
         summary = DensitySummary(
             frequency_from_hz=capture.frequency_from_hz,
             frequency_to_hz=capture.frequency_to_hz,
@@ -138,7 +148,7 @@ def create_app() -> FastAPI:
             span_hz=capture.frequency_to_hz - capture.frequency_from_hz,
             sample_rate_hz=capture.sample_rate_hz,
             sample_count=sample_count,
-            bin_count=request.bins,
+            bin_count=bin_count,
             bin_width_hz=result.bin_width_hz,
             averaged_segments=result.averaged_segments,
             density_unit=density_unit,
@@ -158,11 +168,12 @@ def create_app() -> FastAPI:
             span_hz=capture.frequency_to_hz - capture.frequency_from_hz,
             rbw_estimate_hz=result.bin_width_hz,
             sample_rate_hz=capture.sample_rate_hz,
-            bins=request.bins,
+            bins=bin_count,
             reference_level_dbm=request.reference_level_dbm,
             occupancy_threshold_db=request.occupancy_threshold_db,
             capture_seconds=request.capture_seconds,
             window=request.window,
+            aaronia_span_mode=request.aaronia_span_mode,
         )
         range_assessment = RangeAssessment(
             method=assessment.method,
@@ -187,7 +198,7 @@ def create_app() -> FastAPI:
                     power_linear=float(result.power_linear[index]),
                     power_db=float(result.power_db[index]),
                 )
-                for index in range(request.bins)
+                for index in range(bin_count)
             ]
             if request.include_bins
             else []

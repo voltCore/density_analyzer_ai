@@ -1,6 +1,8 @@
 import type {
   AIComparisonRequest,
   AIComparisonResponse,
+  ConductedJammerComparisonRequest,
+  ConductedJammerComparisonResponse,
   DensityRequest,
   DensityResponse,
   DeviceStatusResponse,
@@ -67,6 +69,15 @@ export function deleteMeasurement(id: string): Promise<{ deleted: boolean }> {
 
 export function explainComparison(payload: AIComparisonRequest): Promise<AIComparisonResponse> {
   return requestJson<AIComparisonResponse>("/api/comparisons/ai-explanation", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function compareConductedJammers(
+  payload: ConductedJammerComparisonRequest,
+): Promise<ConductedJammerComparisonResponse> {
+  return requestJson<ConductedJammerComparisonResponse>("/api/jammer/compare-conducted", {
     method: "POST",
     body: JSON.stringify(payload),
   });

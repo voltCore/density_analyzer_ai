@@ -2,6 +2,20 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
+AaroniaSpanMode = Literal[
+    "auto",
+    "full",
+    "1/2",
+    "1/4",
+    "1/8",
+    "1/16",
+    "1/32",
+    "1/64",
+    "1/128",
+    "1/256",
+    "1/512",
+]
+
 
 class DensityRequest(BaseModel):
     frequency_from_hz: float = Field(gt=0, description="Start frequency in Hz.")
@@ -13,6 +27,7 @@ class DensityRequest(BaseModel):
     apply_to_device: bool = True
     include_bins: bool = True
     window: Literal["hann", "rectangular"] = "hann"
+    aaronia_span_mode: AaroniaSpanMode = "auto"
 
     @model_validator(mode="after")
     def validate_frequency_range(self) -> "DensityRequest":
@@ -73,6 +88,7 @@ class CaptureSettings(BaseModel):
     occupancy_threshold_db: float
     capture_seconds: float
     window: Literal["hann", "rectangular"]
+    aaronia_span_mode: AaroniaSpanMode = "auto"
 
 
 class RangeAssessment(BaseModel):
@@ -176,6 +192,11 @@ class MeasurementStored(MeasurementSummary):
 
 
 SignalComparisonWinner = Literal["baseline", "comparison", "tie", "unclear"]
+ConductedJammerWinner = Literal["jammer_a", "jammer_b", "tie", "unclear"]
+ConductedJammerAnalysisQuality = Literal["direct", "caution", "incompatible"]
+ConductedJammerCoverageLabel = Literal[
+    "none", "narrow", "partial", "wide", "broadband", "unknown"
+]
 
 
 class AIComparisonRequest(BaseModel):
@@ -195,3 +216,78 @@ class AIComparisonResponse(BaseModel):
     numeric_basis: str
     caveats: list[str]
     explanation: str
+
+
+class ConductedJammerTopBin(BaseModel):
+    frequency_hz: float
+    baseline_density_db_per_hz: float
+    jammer_density_db_per_hz: float
+    delta_db: float
+
+
+class ConductedJammerMetrics(BaseModel):
+    compared_bins: int
+    raised_bins: int
+    raised_percent: float
+    raised_bandwidth_hz: float
+    mean_delta_db: float
+    median_delta_db: float
+    p90_delta_db: float
+    max_delta_db: float
+    min_delta_db: float
+    noise_floor_delta_db: float
+    mean_density_delta_db: float
+    peak_density_delta_db: float
+    integrated_power_delta_db: float
+    measured_integrated_power_db: float
+    corrected_integrated_power_db: float
+    peak_delta_frequency_hz: float | None
+    top_raised_bins: list[ConductedJammerTopBin] = Field(default_factory=list)
+    label: ConductedJammerCoverageLabel
+
+
+class ConductedJammerComparisonRequest(BaseModel):
+    baseline_name: str | None = Field(default="Baseline", max_length=160)
+    jammer_a_name: str | None = Field(default="Jammer A", max_length=160)
+    jammer_b_name: str | None = Field(default="Jammer B", max_length=160)
+    response_language: Literal["en", "uk"] = "en"
+    threshold_db: float = Field(default=6.0, ge=0.0, le=120.0)
+    attenuation_db: float = Field(default=0.0, ge=0.0, le=200.0)
+    target_frequency_from_hz: float | None = Field(default=None, gt=0)
+    target_frequency_to_hz: float | None = Field(default=None, gt=0)
+    top_bins_limit: int = Field(default=10, ge=0, le=100)
+    baseline: DensityResponse
+    jammer_a: DensityResponse
+    jammer_b: DensityResponse
+
+    @model_validator(mode="after")
+    def validate_target_frequency_range(self) -> "ConductedJammerComparisonRequest":
+        if (
+            self.target_frequency_from_hz is not None
+            and self.target_frequency_to_hz is not None
+            and self.target_frequency_to_hz <= self.target_frequency_from_hz
+        ):
+            raise ValueError(
+                "target_frequency_to_hz must be greater than target_frequency_from_hz"
+            )
+        return self
+
+
+class ConductedJammerComparisonResponse(BaseModel):
+    method: str
+    threshold_db: float
+    attenuation_db: float
+    analysis_quality: ConductedJammerAnalysisQuality
+    warnings: list[str]
+    baseline_name: str
+    jammer_a_name: str
+    jammer_b_name: str
+    compared_frequency_from_hz: float | None
+    compared_frequency_to_hz: float | None
+    bin_width_hz: float | None
+    jammer_a: ConductedJammerMetrics
+    jammer_b: ConductedJammerMetrics
+    winner: ConductedJammerWinner
+    winner_name: str
+    numeric_basis: str
+    summary: str

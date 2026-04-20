@@ -20,7 +20,21 @@ export type DensityRequest = {
   apply_to_device: boolean;
   include_bins: boolean;
   window: "hann" | "rectangular";
+  aaronia_span_mode: AaroniaSpanMode;
 };
+
+export type AaroniaSpanMode =
+  | "auto"
+  | "full"
+  | "1/2"
+  | "1/4"
+  | "1/8"
+  | "1/16"
+  | "1/32"
+  | "1/64"
+  | "1/128"
+  | "1/256"
+  | "1/512";
 
 export type BinDensity = {
   index: number;
@@ -64,6 +78,7 @@ export type CaptureSettings = {
   occupancy_threshold_db: number;
   capture_seconds: number;
   window: "hann" | "rectangular";
+  aaronia_span_mode: AaroniaSpanMode;
 };
 
 export type RangeAssessment = {
@@ -171,4 +186,69 @@ export type AIComparisonResponse = {
   numeric_basis: string;
   caveats: string[];
   explanation: string;
+};
+
+export type ConductedJammerWinner = "jammer_a" | "jammer_b" | "tie" | "unclear";
+
+export type ConductedJammerTopBin = {
+  frequency_hz: number;
+  baseline_density_db_per_hz: number;
+  jammer_density_db_per_hz: number;
+  delta_db: number;
+};
+
+export type ConductedJammerMetrics = {
+  compared_bins: number;
+  raised_bins: number;
+  raised_percent: number;
+  raised_bandwidth_hz: number;
+  mean_delta_db: number;
+  median_delta_db: number;
+  p90_delta_db: number;
+  max_delta_db: number;
+  min_delta_db: number;
+  noise_floor_delta_db: number;
+  mean_density_delta_db: number;
+  peak_density_delta_db: number;
+  integrated_power_delta_db: number;
+  measured_integrated_power_db: number;
+  corrected_integrated_power_db: number;
+  peak_delta_frequency_hz: number | null;
+  top_raised_bins: ConductedJammerTopBin[];
+  label: "none" | "narrow" | "partial" | "wide" | "broadband" | "unknown";
+};
+
+export type ConductedJammerComparisonRequest = {
+  baseline_name: string | null;
+  jammer_a_name: string | null;
+  jammer_b_name: string | null;
+  response_language: "en" | "uk";
+  threshold_db: number;
+  attenuation_db: number;
+  target_frequency_from_hz: number | null;
+  target_frequency_to_hz: number | null;
+  top_bins_limit: number;
+  baseline: DensityResponse;
+  jammer_a: DensityResponse;
+  jammer_b: DensityResponse;
+};
+
+export type ConductedJammerComparisonResponse = {
+  method: string;
+  threshold_db: number;
+  attenuation_db: number;
+  analysis_quality: "direct" | "caution" | "incompatible";
+  warnings: string[];
+  baseline_name: string;
+  jammer_a_name: string;
+  jammer_b_name: string;
+  compared_frequency_from_hz: number | null;
+  compared_frequency_to_hz: number | null;
+  bin_width_hz: number | null;
+  jammer_a: ConductedJammerMetrics;
+  jammer_b: ConductedJammerMetrics;
+  winner: ConductedJammerWinner;
+  winner_name: string;
+  numeric_basis: string;
+  summary: string;
 };
