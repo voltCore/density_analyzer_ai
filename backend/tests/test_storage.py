@@ -22,6 +22,17 @@ def test_measurement_store_creates_auto_name_and_reads_full_snapshot(tmp_path) -
     assert loaded.result.bins == []
 
 
+def test_density_response_accepts_legacy_snapshot_without_iq_rate() -> None:
+    payload = _density_response().model_dump()
+    del payload["summary"]["iq_rate_hz"]
+    del payload["capture_settings"]["iq_rate_hz"]
+
+    response = DensityResponse.model_validate(payload)
+
+    assert response.summary.iq_rate_hz == 10_000_000
+    assert response.capture_settings.iq_rate_hz == 10_000_000
+
+
 def _density_response() -> DensityResponse:
     return DensityResponse(
         source="aaronia",
@@ -31,6 +42,7 @@ def _density_response() -> DensityResponse:
             frequency_to_hz=750_000_000,
             center_frequency_hz=745_000_000,
             span_hz=10_000_000,
+            iq_rate_hz=10_000_000,
             sample_rate_hz=10_000_000,
             sample_count=16_384,
             bin_count=1024,
@@ -51,6 +63,7 @@ def _density_response() -> DensityResponse:
             frequency_to_hz=750_000_000,
             center_frequency_hz=745_000_000,
             span_hz=10_000_000,
+            iq_rate_hz=10_000_000,
             rbw_estimate_hz=9765.625,
             sample_rate_hz=10_000_000,
             bins=1024,

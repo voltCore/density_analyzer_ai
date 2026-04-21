@@ -41,6 +41,8 @@ const resources = {
         ukrainian: "Ukrainian",
       },
       form: {
+        centerFrequency: "Center frequency, Hz",
+        iqRate: "IQ rate, Hz",
         frequencyFrom: "Frequency from, Hz",
         frequencyTo: "Frequency to, Hz",
         bins: "Bins",
@@ -53,7 +55,7 @@ const resources = {
         includeBins: "Return numerical data by bins",
         submit: "Calculate",
         loading: "Calculating...",
-        invalidRange: "End frequency must be greater than start frequency, bins >= 16.",
+        invalidRange: "Center frequency and IQ rate must be positive, bins >= 16.",
       },
       errors: {
         backendUnavailable: "Backend is unavailable",
@@ -76,7 +78,7 @@ const resources = {
         no: "no",
         packets: "Packets",
         readyTitle: "Ready to calculate.",
-        readyText: "Enter the frequency range and bin count.",
+        readyText: "Enter center frequency, IQ rate, and bin count.",
         density: "Density",
         power: "power",
         samples: "samples",
@@ -157,6 +159,7 @@ const resources = {
         end: "End",
         center: "Center",
         span: "Span",
+        iqRate: "IQ rate",
         rbwFromFft: "RBW from FFT size",
         sampleFrequency: "Sample frequency",
         samplesPerPacket: "Samples/packet",
@@ -225,14 +228,14 @@ const resources = {
             title: "Calculation fields",
             items: [
               {
-                term: "Frequency from, Hz",
+                term: "Center frequency, Hz",
                 description:
-                  "Start of the frequency range. The backend begins capture and density calculation from this frequency.",
+                  "Center frequency sent to Aaronia before capture.",
               },
               {
-                term: "Frequency to, Hz",
+                term: "IQ rate, Hz",
                 description:
-                  "End of the range. The difference between end and start frequency forms the measurement span.",
+                  "IQ sample rate / span. The backend uses it to derive the measured range as center minus and plus half of this value, then replaces it with the value reported by the stream header when available.",
               },
               {
                 term: "Bins",
@@ -262,7 +265,7 @@ const resources = {
               {
                 term: "Send settings to Aaronia",
                 description:
-                  "When enabled, the backend sends range, center, span, bins, and reference level to the device before calculation.",
+                  "When enabled, the backend sends center frequency, IQ rate/span, bins, and reference level to the device before calculation.",
               },
               {
                 term: "Return numerical data by bins",
@@ -493,6 +496,8 @@ const resources = {
         ukrainian: "Українська",
       },
       form: {
+        centerFrequency: "Центральна частота, Hz",
+        iqRate: "IQ rate, Hz",
         frequencyFrom: "Частота з, Hz",
         frequencyTo: "Частота по, Hz",
         bins: "Кількість клітинок",
@@ -505,7 +510,7 @@ const resources = {
         includeBins: "Повернути числові дані по клітинках",
         submit: "Розрахувати",
         loading: "Рахую...",
-        invalidRange: "Кінцева частота має бути більшою за початкову, клітинок >= 16.",
+        invalidRange: "Центральна частота та IQ rate мають бути додатними, клітинок >= 16.",
       },
       errors: {
         backendUnavailable: "Бекенд недоступний",
@@ -528,7 +533,7 @@ const resources = {
         no: "ні",
         packets: "Пакети",
         readyTitle: "Готово до розрахунку.",
-        readyText: "Введіть діапазон частот і кількість клітинок.",
+        readyText: "Введіть центральну частоту, IQ rate і кількість клітинок.",
         density: "Щільність",
         power: "потужність",
         samples: "семпли",
@@ -609,6 +614,7 @@ const resources = {
         end: "Кінець",
         center: "Центр",
         span: "Смуга",
+        iqRate: "IQ rate",
         rbwFromFft: "RBW за розміром FFT",
         sampleFrequency: "Частота семплювання",
         samplesPerPacket: "Семплів/пакет",
@@ -677,14 +683,14 @@ const resources = {
             title: "Поля розрахунку",
             items: [
               {
-                term: "Частота з, Hz",
+                term: "Центральна частота, Hz",
                 description:
-                  "Початок частотного діапазону. Звідси бекенд починає збір і розрахунок щільності сигналу.",
+                  "Центральна частота, яку бекенд передає на Aaronia перед збором IQ.",
               },
               {
-                term: "Частота по, Hz",
+                term: "IQ rate, Hz",
                 description:
-                  "Кінець діапазону. Різниця між кінцевою та початковою частотою утворює смугу виміру.",
+                  "Частота семплювання IQ / смуга. Бекенд виводить діапазон як центр мінус і плюс половина цього значення, а потім замінює його значенням із заголовка потоку, якщо воно доступне.",
               },
               {
                 term: "Клітинки",
@@ -714,7 +720,7 @@ const resources = {
               {
                 term: "Передавати налаштування на Aaronia",
                 description:
-                  "Коли увімкнено, бекенд перед розрахунком відправляє діапазон, центр, смугу, кількість клітинок і рівень опори на прилад.",
+                  "Коли увімкнено, бекенд перед розрахунком відправляє центральну частоту, IQ rate/смугу, кількість клітинок і рівень опори на прилад.",
               },
               {
                 term: "Повернути числові дані по клітинках",

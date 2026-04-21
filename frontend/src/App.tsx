@@ -26,8 +26,8 @@ import type {
 import i18nInstance, { persistLanguage } from "./i18n";
 
 const initialRequest: DensityRequest = {
-  frequency_from_hz: 2_400_000_000,
-  frequency_to_hz: 2_500_000_000,
+  center_frequency_hz: 2_450_000_000,
+  iq_rate_hz: 100_000_000,
   bins: 1024,
   capture_seconds: 0.25,
   reference_level_dbm: null,
@@ -71,16 +71,22 @@ export default function App() {
         setSettings(data);
         setForm((current) => ({
           ...current,
-          frequency_from_hz: data.default_frequency_from_hz,
-          frequency_to_hz: data.default_frequency_to_hz,
+          center_frequency_hz:
+            data.default_center_frequency_hz ??
+            (data.default_frequency_from_hz + data.default_frequency_to_hz) / 2,
+          iq_rate_hz:
+            data.default_iq_rate_hz ??
+            data.default_frequency_to_hz - data.default_frequency_from_hz,
           bins: data.default_bins,
           capture_seconds: data.default_capture_seconds,
         }));
       })
       .catch((requestError: unknown) => {
         setError(requestError instanceof Error ? requestError.message : t("errors.backendUnavailable"));
+      })
+      .finally(() => {
+        void refreshDeviceStatus(true);
       });
-    refreshDeviceStatus();
     void refreshMeasurements();
   }, []);
 
@@ -118,31 +124,45 @@ export default function App() {
     };
   }, [helpOpen]);
 
-  const rangeIsValid = useMemo(
-    () => form.frequency_to_hz > form.frequency_from_hz && form.bins >= 16,
-    [form.bins, form.frequency_from_hz, form.frequency_to_hz],
+  const requestIsValid = useMemo(
+    () => form.center_frequency_hz > 0 && form.iq_rate_hz > 0 && form.bins >= 16,
+    [form.bins, form.center_frequency_hz, form.iq_rate_hz],
+  );
+  const deviceIqRateOptions = useMemo(
+    () => uniqueFiniteNumbers(deviceStatus?.stream?.iq_rate_options_hz ?? []),
+    [deviceStatus?.stream?.iq_rate_options_hz],
+  );
+  const iqRateOptions = useMemo(
+    () =>
+      deviceIqRateOptions.length > 1
+        ? uniqueFiniteNumbers([form.iq_rate_hz, ...deviceIqRateOptions])
+        : [],
+    [deviceIqRateOptions, form.iq_rate_hz],
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
 
-    if (!rangeIsValid) {
+    if (!requestIsValid) {
       setError(t("form.invalidRange"));
       return;
     }
 
     setLoading(true);
     try {
+      const halfIqRateHz = form.iq_rate_hz / 2;
       const payload = {
         ...form,
+        frequency_from_hz: form.center_frequency_hz - halfIqRateHz,
+        frequency_to_hz: form.center_frequency_hz + halfIqRateHz,
         reference_level_dbm: Number.isFinite(form.reference_level_dbm)
           ? form.reference_level_dbm
           : null,
       };
       const data = await calculateDensity(payload);
       setResult(data);
-      void refreshDeviceStatus();
+      void refreshDeviceStatus(true);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t("errors.dataFetchFailed"));
     } finally {
@@ -150,13 +170,34 @@ export default function App() {
     }
   }
 
-  async function refreshDeviceStatus() {
+  async function refreshDeviceStatus(syncForm = false) {
     try {
       const data = await getDeviceStatus();
       setDeviceStatus(data);
+      if (syncForm) {
+        syncFormFromDeviceStatus(data);
+      }
     } catch {
       setDeviceStatus(null);
     }
+  }
+
+  function syncFormFromDeviceStatus(status: DeviceStatusResponse) {
+    const centerFrequencyHz = firstFiniteNumber(status.stream?.center_frequency_hz);
+    const iqRateHz = firstFiniteNumber(
+      status.stream?.iq_rate_hz,
+      status.stream?.sample_frequency_hz,
+      status.stream?.span_hz,
+    );
+    if (centerFrequencyHz === null && iqRateHz === null) {
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      center_frequency_hz: centerFrequencyHz ?? current.center_frequency_hz,
+      iq_rate_hz: iqRateHz ?? current.iq_rate_hz,
+    }));
   }
 
   async function refreshMeasurements() {
@@ -331,35 +372,53 @@ export default function App() {
       <section className="workspace">
         <form className="control-surface" onSubmit={handleSubmit}>
           <label>
-            {t("form.frequencyFrom")}
+            {t("form.centerFrequency")}
             <input
               type="number"
               min="1"
               step="1"
-              value={form.frequency_from_hz}
+              value={form.center_frequency_hz}
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  frequency_from_hz: Number(event.target.value),
+                  center_frequency_hz: Number(event.target.value),
                 }))
               }
             />
           </label>
 
           <label>
-            {t("form.frequencyTo")}
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={form.frequency_to_hz}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  frequency_to_hz: Number(event.target.value),
-                }))
-              }
-            />
+            {t("form.iqRate")}
+            {iqRateOptions.length > 0 ? (
+              <select
+                value={form.iq_rate_hz}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    iq_rate_hz: Number(event.target.value),
+                  }))
+                }
+              >
+                {iqRateOptions.map((iqRateHz) => (
+                  <option key={iqRateHz} value={iqRateHz}>
+                    {formatHz(iqRateHz)} Hz
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={form.iq_rate_hz}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    iq_rate_hz: Number(event.target.value),
+                  }))
+                }
+              />
+            )}
           </label>
 
           <label>
@@ -471,7 +530,7 @@ export default function App() {
             {t("form.includeBins")}
           </label>
 
-          <button disabled={loading || !rangeIsValid} type="submit">
+          <button disabled={loading || !requestIsValid} type="submit">
             {loading ? t("form.loading") : t("form.submit")}
           </button>
         </form>
@@ -1015,6 +1074,7 @@ function DeviceStatusPanel({ status }: { status: DeviceStatusResponse | null }) 
     [t("device.end"), stream?.frequency_to_hz, "Hz"],
     [t("device.center"), stream?.center_frequency_hz, "Hz"],
     [t("device.span"), stream?.span_hz, "Hz"],
+    [t("device.iqRate"), stream?.iq_rate_hz, "Hz"],
     [t("device.rbwFromFft"), stream?.rbw_from_fft_size_hz, "Hz"],
     [t("device.sampleFrequency"), stream?.sample_frequency_hz, "Hz"],
     [t("device.samplesPerPacket"), stream?.samples_per_packet, null],
@@ -1100,6 +1160,7 @@ function DeviceStatusPanel({ status }: { status: DeviceStatusResponse | null }) 
 
 function CaptureSettingsPanel({ settings }: { settings: CaptureSettings }) {
   const { t } = useTranslation();
+  const iqRateHz = captureIqRateHz(settings);
 
   return (
     <section className="settings-panel compact">
@@ -1109,6 +1170,7 @@ function CaptureSettingsPanel({ settings }: { settings: CaptureSettings }) {
         <InfoItem label={t("device.end")} value={`${formatHz(settings.frequency_to_hz)} Hz`} />
         <InfoItem label={t("device.center")} value={`${formatHz(settings.center_frequency_hz)} Hz`} />
         <InfoItem label={t("device.span")} value={`${formatHz(settings.span_hz)} Hz`} />
+        <InfoItem label={t("device.iqRate")} value={`${formatHz(iqRateHz)} Hz`} />
         <InfoItem label={t("capture.rbwBin")} value={`${formatHz(settings.rbw_estimate_hz)} Hz`} />
         <InfoItem label={t("capture.sampleRate")} value={`${formatHz(settings.sample_rate_hz)} Hz`} />
         <InfoItem label={t("form.bins")} value={settings.bins} />
@@ -1303,6 +1365,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function firstFiniteNumber(...values: Array<number | null | undefined>) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function uniqueFiniteNumbers(values: number[]) {
+  const unique = new Map<number, number>();
+  for (const value of values) {
+    if (Number.isFinite(value) && value > 0) {
+      unique.set(Math.round(value), value);
+    }
+  }
+  return [...unique.entries()]
+    .sort(([left], [right]) => right - left)
+    .map(([, value]) => value);
+}
+
+function captureIqRateHz(settings: CaptureSettings) {
+  return firstFiniteNumber(settings.iq_rate_hz, settings.sample_rate_hz, settings.span_hz) ?? 0;
+}
+
 function automaticSnapshotName(result: DensityResponse, createdAt: string) {
   const startMhz = result.capture_settings.frequency_from_hz / 1_000_000;
   const endMhz = result.capture_settings.frequency_to_hz / 1_000_000;
@@ -1340,6 +1427,7 @@ function resultToCsv(result: DensityResponse) {
   addMetric("capture", "frequency_to_hz", result.capture_settings.frequency_to_hz, "Hz");
   addMetric("capture", "center_frequency_hz", result.capture_settings.center_frequency_hz, "Hz");
   addMetric("capture", "span_hz", result.capture_settings.span_hz, "Hz");
+  addMetric("capture", "iq_rate_hz", captureIqRateHz(result.capture_settings), "Hz");
   addMetric("capture", "rbw_estimate_hz", result.capture_settings.rbw_estimate_hz, "Hz");
   addMetric("capture", "bins", result.capture_settings.bins);
   addMetric("capture", "reference_level_dbm", result.capture_settings.reference_level_dbm, "dBm");

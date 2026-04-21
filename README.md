@@ -1,6 +1,6 @@
 # Density Analyzer AI
 
-Backend and frontend for numerical signal density analysis from Aaronia SPECTRAN V6 / RTSA Suite PRO IQ data. The frontend accepts a frequency range, bin count, IQ capture duration, and optional reference level. The backend can send capture settings to the device, read the IQ stream, calculate power spectral density across FFT bins, and return numerical data for analysis, export, and comparison.
+Backend and frontend for numerical signal density analysis from Aaronia SPECTRAN V6 / RTSA Suite PRO IQ data. The frontend accepts a center frequency, IQ rate/span, bin count, IQ capture duration, and optional reference level. The backend can send capture settings to the device, read the IQ stream, calculate power spectral density across FFT bins, and return numerical data for analysis, export, and comparison.
 
 ## What It Calculates
 
@@ -100,8 +100,6 @@ curl -X PUT -H 'Content-Type: application/json' \
 
 `POST /api/density` sends a JSON payload to `/control` with:
 
-- `frequencyStart`
-- `frequencyEnd`
 - `frequencyCenter`
 - `frequencySpan`
 - `frequencyBins`
@@ -119,8 +117,8 @@ Returns default values for the frontend form.
 
 ```json
 {
-  "frequency_from_hz": 2400000000,
-  "frequency_to_hz": 2500000000,
+  "center_frequency_hz": 2450000000,
+  "iq_rate_hz": 100000000,
   "bins": 1024,
   "capture_seconds": 0.25,
   "reference_level_dbm": null,
@@ -130,6 +128,8 @@ Returns default values for the frontend form.
   "window": "hann"
 }
 ```
+
+Legacy requests with `frequency_from_hz` and `frequency_to_hz` are still accepted. The backend derives the equivalent center frequency and IQ rate/span from those values.
 
 The response contains `summary` and a `bins` array with:
 

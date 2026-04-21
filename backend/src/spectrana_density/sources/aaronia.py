@@ -38,6 +38,20 @@ class IQFrame:
         return float(value) if value is not None else None
 
     @property
+    def center_frequency_hz(self) -> float | None:
+        value = self.header.get("centerFrequency") or self.header.get("frequencyCenter")
+        return float(value) if value is not None else None
+
+    @property
+    def sample_frequency_hz(self) -> float | None:
+        value = (
+            self.header.get("sampleFrequency")
+            or self.header.get("sampleRate")
+            or self.header.get("iqRate")
+        )
+        return float(value) if value is not None else None
+
+    @property
     def unit(self) -> str:
         value = self.header.get("unit")
         return str(value) if value else "normalized"
@@ -51,6 +65,7 @@ class AaroniaStreamCapture:
     first_header: dict[str, Any]
     frequency_from_hz: float
     frequency_to_hz: float
+    iq_rate_hz: float
     unit: str
     elapsed_seconds: float
 
@@ -133,11 +148,10 @@ class AaroniaIQSource:
 
         stream_capture = await self._read_capture(request)
         first_header = stream_capture.first_header
-        sample_rate_hz = stream_capture.frequency_to_hz - stream_capture.frequency_from_hz
 
         return IQCapture(
             samples=np.empty(0, dtype=np.complex128),
-            sample_rate_hz=sample_rate_hz,
+            sample_rate_hz=stream_capture.iq_rate_hz,
             frequency_from_hz=stream_capture.frequency_from_hz,
             frequency_to_hz=stream_capture.frequency_to_hz,
             unit=stream_capture.unit,
@@ -148,6 +162,9 @@ class AaroniaIQSource:
             metadata={
                 "stream_url": self._settings.aaronia_stream_url,
                 "control_url": self._settings.aaronia_control_url,
+                "requested_center_frequency_hz": request.center_frequency_hz,
+                "requested_iq_rate_hz": request.iq_rate_hz,
+                "actual_iq_rate_hz": stream_capture.iq_rate_hz,
                 "first_packet_num": first_header.get("num"),
                 "first_packet_size": first_header.get("size"),
                 "first_packet_sample_size": first_header.get("sampleSize"),
@@ -161,10 +178,8 @@ class AaroniaIQSource:
     async def _configure_device(self, request: DensityRequest) -> None:
         payload: dict[str, str | int | float | bool] = {
             "type": "capture",
-            "frequencyStart": request.frequency_from_hz,
-            "frequencyEnd": request.frequency_to_hz,
             "frequencyCenter": request.center_frequency_hz,
-            "frequencySpan": request.span_hz,
+            "frequencySpan": request.iq_rate_hz,
             "frequencyBins": request.bins,
         }
         if request.reference_level_dbm is not None:
@@ -198,6 +213,7 @@ class AaroniaIQSource:
         first_header: dict[str, Any] | None = None
         frequency_from_hz = request.frequency_from_hz
         frequency_to_hz = request.frequency_to_hz
+        iq_rate_hz = request.iq_rate_hz
         unit = "normalized"
         accumulator: StreamingDensityAccumulator | None = None
         packet_count = 0
@@ -221,8 +237,9 @@ class AaroniaIQSource:
                     for frame in parser.feed(chunk):
                         if first_header is None:
                             first_header = frame.header
-                            frequency_from_hz = frame.frequency_from_hz or request.frequency_from_hz
-                            frequency_to_hz = frame.frequency_to_hz or request.frequency_to_hz
+                            frequency_from_hz, frequency_to_hz, iq_rate_hz = (
+                                _frame_frequency_range(frame, request)
+                            )
                             unit = frame.unit
                             accumulator = StreamingDensityAccumulator(
                                 frequency_from_hz=frequency_from_hz,
@@ -259,6 +276,7 @@ class AaroniaIQSource:
             first_header=first_header,
             frequency_from_hz=frequency_from_hz,
             frequency_to_hz=frequency_to_hz,
+            iq_rate_hz=iq_rate_hz,
             unit=unit,
             elapsed_seconds=time.monotonic() - started_at,
         )
@@ -329,6 +347,8 @@ def mock_device_status(settings: Settings) -> DeviceStatusResponse:
             )
             / 2,
             span_hz=span_hz,
+            iq_rate_hz=span_hz,
+            iq_rate_options_hz=[span_hz, span_hz / 2, span_hz / 4, span_hz / 8],
             sample_frequency_hz=span_hz,
             rbw_from_fft_size_hz=span_hz / settings.default_bins,
         ),
@@ -389,6 +409,32 @@ def _decode_payload_values(payload: bytes, sample_format: str) -> NDArray[np.flo
         case _:
             msg = f"Unsupported Aaronia IQ stream format={sample_format}"
             raise ValueError(msg)
+
+
+def _frame_frequency_range(frame: IQFrame, request: DensityRequest) -> tuple[float, float, float]:
+    frequency_from_hz = frame.frequency_from_hz
+    frequency_to_hz = frame.frequency_to_hz
+    iq_rate_hz = frame.sample_frequency_hz
+
+    if (
+        frequency_from_hz is not None
+        and frequency_to_hz is not None
+        and frequency_to_hz > frequency_from_hz
+    ):
+        return (
+            frequency_from_hz,
+            frequency_to_hz,
+            iq_rate_hz if iq_rate_hz is not None else frequency_to_hz - frequency_from_hz,
+        )
+
+    center_frequency_hz = frame.center_frequency_hz or request.center_frequency_hz
+    iq_rate_hz = iq_rate_hz or request.iq_rate_hz
+    half_span_hz = iq_rate_hz / 2
+    return (
+        center_frequency_hz - half_span_hz,
+        center_frequency_hz + half_span_hz,
+        iq_rate_hz,
+    )
 
 
 def _value_size_bytes(sample_format: str) -> int:
@@ -489,15 +535,22 @@ def _device_setting(item: Mapping[str, Any]) -> DeviceSetting:
         raw_value=raw_value,
         unit=str(item["unit"]) if item.get("unit") is not None else None,
         path=str(item.get("path")) if item.get("path") is not None else None,
+        options=_enum_options(item),
     )
+
+
+def _enum_options(item: Mapping[str, Any]) -> list[str | int | float | bool | None]:
+    values = item.get("values")
+    if not isinstance(values, str):
+        return []
+    return [value.strip() for value in values.split(",")]
 
 
 def _enum_label(item: Mapping[str, Any]) -> str | int | float | bool | None:
     raw_value = item.get("value")
-    values = item.get("values")
-    if not isinstance(values, str):
+    options = _enum_options(item)
+    if not options:
         return raw_value
-    options = [value.strip() for value in values.split(",")]
     if isinstance(raw_value, int) and 0 <= raw_value < len(options):
         return options[raw_value]
     return raw_value
@@ -518,32 +571,80 @@ def _stream_status(
 ) -> DeviceStreamStatus:
     frequency_from_hz = _float_or_none(stream_header.get("startFrequency"))
     frequency_to_hz = _float_or_none(stream_header.get("endFrequency"))
+    center_frequency_hz = _first_float_or_none(
+        stream_header.get("centerFrequency"),
+        stream_header.get("frequencyCenter"),
+    )
+    sample_frequency_hz = _float_or_none(stream_header.get("sampleFrequency"))
     span_hz = (
         frequency_to_hz - frequency_from_hz
         if frequency_from_hz is not None and frequency_to_hz is not None
         else None
     )
+    iq_rate_hz = sample_frequency_hz or span_hz
+
+    if (
+        center_frequency_hz is None
+        and frequency_from_hz is not None
+        and frequency_to_hz is not None
+    ):
+        center_frequency_hz = (frequency_from_hz + frequency_to_hz) / 2
+    if (
+        frequency_from_hz is None
+        and frequency_to_hz is None
+        and center_frequency_hz is not None
+        and iq_rate_hz is not None
+    ):
+        half_span_hz = iq_rate_hz / 2
+        frequency_from_hz = center_frequency_hz - half_span_hz
+        frequency_to_hz = center_frequency_hz + half_span_hz
+        span_hz = iq_rate_hz
+
     fft_size_setting = settings_map.get("fft_size")
     fft_size = _float_or_none(fft_size_setting.raw_value) if fft_size_setting else None
+    iq_rate_options_hz = _iq_rate_options_hz(iq_rate_hz, settings_map.get("span"))
 
     return DeviceStreamStatus(
         payload=_str_or_none(stream_header.get("payload")),
         unit=_str_or_none(stream_header.get("unit")),
         frequency_from_hz=frequency_from_hz,
         frequency_to_hz=frequency_to_hz,
-        center_frequency_hz=(
-            (frequency_from_hz + frequency_to_hz) / 2
-            if frequency_from_hz is not None and frequency_to_hz is not None
-            else None
-        ),
+        center_frequency_hz=center_frequency_hz,
         span_hz=span_hz,
-        sample_frequency_hz=_float_or_none(stream_header.get("sampleFrequency")),
+        iq_rate_hz=iq_rate_hz,
+        iq_rate_options_hz=iq_rate_options_hz,
+        sample_frequency_hz=sample_frequency_hz,
         samples_per_packet=_int_or_none(stream_header.get("samples")),
         sample_size=_int_or_none(stream_header.get("sampleSize")),
         sample_depth=_int_or_none(stream_header.get("sampleDepth")),
         scale=_float_or_none(stream_header.get("scale")),
         rbw_from_fft_size_hz=span_hz / fft_size if span_hz is not None and fft_size else None,
     )
+
+
+def _iq_rate_options_hz(
+    current_iq_rate_hz: float | None,
+    span_setting: DeviceSetting | None,
+) -> list[float]:
+    if current_iq_rate_hz is None or current_iq_rate_hz <= 0:
+        return []
+
+    options = [current_iq_rate_hz]
+    current_decimation = _int_or_none(span_setting.raw_value) if span_setting else None
+    option_count = len(span_setting.options) if span_setting else 0
+    if current_decimation is not None and option_count > 0:
+        full_iq_rate_hz = current_iq_rate_hz * (2**current_decimation)
+        options.extend(full_iq_rate_hz / (2**index) for index in range(option_count))
+
+    return _unique_sorted_frequencies(options)
+
+
+def _unique_sorted_frequencies(values: list[float]) -> list[float]:
+    unique: dict[int, float] = {}
+    for value in values:
+        if value > 0:
+            unique[round(value)] = float(value)
+    return [unique[key] for key in sorted(unique, reverse=True)]
 
 
 def _simple_mapping(data: Mapping[str, Any]) -> dict[str, str | int | float | bool | None]:
@@ -555,7 +656,22 @@ def _simple_mapping(data: Mapping[str, Any]) -> dict[str, str | int | float | bo
 
 
 def _float_or_none(value: Any) -> float | None:
-    return float(value) if isinstance(value, int | float) else None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _first_float_or_none(*values: Any) -> float | None:
+    for value in values:
+        parsed = _float_or_none(value)
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def _int_or_none(value: Any) -> int | None:

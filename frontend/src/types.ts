@@ -3,6 +3,8 @@ export type SettingsResponse = {
   source_mode: "mock" | "aaronia";
   default_frequency_from_hz: number;
   default_frequency_to_hz: number;
+  default_center_frequency_hz?: number;
+  default_iq_rate_hz?: number;
   default_bins: number;
   default_capture_seconds: number;
   max_capture_samples: number;
@@ -11,8 +13,8 @@ export type SettingsResponse = {
 };
 
 export type DensityRequest = {
-  frequency_from_hz: number;
-  frequency_to_hz: number;
+  center_frequency_hz: number;
+  iq_rate_hz: number;
   bins: number;
   capture_seconds: number;
   reference_level_dbm: number | null;
@@ -36,6 +38,7 @@ export type DensitySummary = {
   frequency_to_hz: number;
   center_frequency_hz: number;
   span_hz: number;
+  iq_rate_hz?: number;
   sample_rate_hz: number;
   sample_count: number;
   bin_count: number;
@@ -57,6 +60,7 @@ export type CaptureSettings = {
   frequency_to_hz: number;
   center_frequency_hz: number;
   span_hz: number;
+  iq_rate_hz?: number;
   rbw_estimate_hz: number;
   sample_rate_hz: number;
   bins: number;
@@ -95,6 +99,7 @@ export type DeviceSetting = {
   raw_value: string | number | boolean | null;
   unit: string | null;
   path: string | null;
+  options?: Array<string | number | boolean | null>;
 };
 
 export type DeviceStreamStatus = {
@@ -104,6 +109,8 @@ export type DeviceStreamStatus = {
   frequency_to_hz: number | null;
   center_frequency_hz: number | null;
   span_hz: number | null;
+  iq_rate_hz?: number | null;
+  iq_rate_options_hz?: number[];
   sample_frequency_hz: number | null;
   samples_per_packet: number | null;
   sample_size: number | null;

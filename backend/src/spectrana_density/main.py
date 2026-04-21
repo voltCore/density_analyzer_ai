@@ -55,6 +55,15 @@ def create_app() -> FastAPI:
             source_mode=runtime_settings.source_mode,
             default_frequency_from_hz=runtime_settings.default_frequency_from_hz,
             default_frequency_to_hz=runtime_settings.default_frequency_to_hz,
+            default_center_frequency_hz=(
+                runtime_settings.default_frequency_from_hz
+                + runtime_settings.default_frequency_to_hz
+            )
+            / 2,
+            default_iq_rate_hz=(
+                runtime_settings.default_frequency_to_hz
+                - runtime_settings.default_frequency_from_hz
+            ),
             default_bins=runtime_settings.default_bins,
             default_capture_seconds=runtime_settings.default_capture_seconds,
             max_capture_samples=runtime_settings.max_capture_samples,
@@ -136,6 +145,7 @@ def create_app() -> FastAPI:
             frequency_to_hz=capture.frequency_to_hz,
             center_frequency_hz=(capture.frequency_from_hz + capture.frequency_to_hz) / 2,
             span_hz=capture.frequency_to_hz - capture.frequency_from_hz,
+            iq_rate_hz=capture.sample_rate_hz,
             sample_rate_hz=capture.sample_rate_hz,
             sample_count=sample_count,
             bin_count=request.bins,
@@ -156,6 +166,7 @@ def create_app() -> FastAPI:
             frequency_to_hz=capture.frequency_to_hz,
             center_frequency_hz=(capture.frequency_from_hz + capture.frequency_to_hz) / 2,
             span_hz=capture.frequency_to_hz - capture.frequency_from_hz,
+            iq_rate_hz=capture.sample_rate_hz,
             rbw_estimate_hz=result.bin_width_hz,
             sample_rate_hz=capture.sample_rate_hz,
             bins=request.bins,

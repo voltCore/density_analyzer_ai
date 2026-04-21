@@ -1,11 +1,11 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
 
 class DensityRequest(BaseModel):
-    frequency_from_hz: float = Field(gt=0, description="Start frequency in Hz.")
-    frequency_to_hz: float = Field(gt=0, description="Stop frequency in Hz.")
+    center_frequency_hz: float = Field(gt=0, description="Center frequency in Hz.")
+    iq_rate_hz: float = Field(gt=0, description="IQ sample rate / span in Hz.")
     bins: int = Field(default=1024, ge=16, le=65_536)
     capture_seconds: float = Field(default=0.25, gt=0, le=30)
     reference_level_dbm: float | None = Field(default=None, ge=-200, le=80)
@@ -13,6 +13,38 @@ class DensityRequest(BaseModel):
     apply_to_device: bool = True
     include_bins: bool = True
     window: Literal["hann", "rectangular"] = "hann"
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_frequency_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        values = dict(data)
+        center_hz = _number_or_none(values.get("center_frequency_hz"))
+        iq_rate_hz = _first_number(
+            values.get("iq_rate_hz"),
+            values.get("iq_rate"),
+            values.get("sample_rate_hz"),
+            values.get("span_hz"),
+        )
+        frequency_from_hz = _number_or_none(values.get("frequency_from_hz"))
+        frequency_to_hz = _number_or_none(values.get("frequency_to_hz"))
+
+        if frequency_from_hz is not None and frequency_to_hz is not None:
+            center_hz = (
+                center_hz if center_hz is not None else (frequency_from_hz + frequency_to_hz) / 2
+            )
+            iq_rate_hz = (
+                iq_rate_hz if iq_rate_hz is not None else frequency_to_hz - frequency_from_hz
+            )
+
+        if center_hz is not None:
+            values["center_frequency_hz"] = center_hz
+        if iq_rate_hz is not None:
+            values["iq_rate_hz"] = iq_rate_hz
+
+        return values
 
     @model_validator(mode="after")
     def validate_frequency_range(self) -> "DensityRequest":
@@ -22,13 +54,49 @@ class DensityRequest(BaseModel):
 
     @computed_field
     @property
-    def center_frequency_hz(self) -> float:
-        return (self.frequency_from_hz + self.frequency_to_hz) / 2
+    def frequency_from_hz(self) -> float:
+        return self.center_frequency_hz - self.iq_rate_hz / 2
+
+    @computed_field
+    @property
+    def frequency_to_hz(self) -> float:
+        return self.center_frequency_hz + self.iq_rate_hz / 2
 
     @computed_field
     @property
     def span_hz(self) -> float:
-        return self.frequency_to_hz - self.frequency_from_hz
+        return self.iq_rate_hz
+
+
+def _number_or_none(value: Any) -> float | None:
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _first_number(*values: Any) -> float | None:
+    for value in values:
+        parsed = _number_or_none(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _normalize_iq_rate_hz(data: Any) -> Any:
+    if not isinstance(data, dict):
+        return data
+
+    values = dict(data)
+    if _number_or_none(values.get("iq_rate_hz")) is None:
+        iq_rate_hz = _first_number(values.get("sample_rate_hz"), values.get("span_hz"))
+        if iq_rate_hz is not None:
+            values["iq_rate_hz"] = iq_rate_hz
+    return values
 
 
 class BinDensity(BaseModel):
@@ -41,10 +109,16 @@ class BinDensity(BaseModel):
 
 
 class DensitySummary(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_iq_rate_hz(cls, data: Any) -> Any:
+        return _normalize_iq_rate_hz(data)
+
     frequency_from_hz: float
     frequency_to_hz: float
     center_frequency_hz: float
     span_hz: float
+    iq_rate_hz: float
     sample_rate_hz: float
     sample_count: int
     bin_count: int
@@ -62,10 +136,16 @@ class DensitySummary(BaseModel):
 
 
 class CaptureSettings(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_iq_rate_hz(cls, data: Any) -> Any:
+        return _normalize_iq_rate_hz(data)
+
     frequency_from_hz: float
     frequency_to_hz: float
     center_frequency_hz: float
     span_hz: float
+    iq_rate_hz: float
     rbw_estimate_hz: float
     sample_rate_hz: float
     bins: int
@@ -104,6 +184,7 @@ class DeviceSetting(BaseModel):
     raw_value: str | int | float | bool | None = None
     unit: str | None = None
     path: str | None = None
+    options: list[str | int | float | bool | None] = Field(default_factory=list)
 
 
 class DeviceStreamStatus(BaseModel):
@@ -113,6 +194,8 @@ class DeviceStreamStatus(BaseModel):
     frequency_to_hz: float | None = None
     center_frequency_hz: float | None = None
     span_hz: float | None = None
+    iq_rate_hz: float | None = None
+    iq_rate_options_hz: list[float] = Field(default_factory=list)
     sample_frequency_hz: float | None = None
     samples_per_packet: int | None = None
     sample_size: int | None = None
@@ -138,6 +221,8 @@ class SettingsResponse(BaseModel):
     source_mode: Literal["mock", "aaronia"]
     default_frequency_from_hz: float
     default_frequency_to_hz: float
+    default_center_frequency_hz: float
+    default_iq_rate_hz: float
     default_bins: int
     default_capture_seconds: float
     max_capture_samples: int
